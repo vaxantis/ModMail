@@ -11,25 +11,38 @@ however, insignificant breaking changes do not guarantee a major version bump, s
 ### Added
 
 **New Configuration Options:**
-* `unsnooze_history_limit`: Limits the number of messages replayed when unsnoozing (genesis message and notes are always shown).
-* `snooze_behavior`: Choose between `delete` (legacy) or `move` behavior for snoozing.
-* `snoozed_category_id`: Target category for `move` snoozing; required when `snooze_behavior` is `move`.
-* `snooze_store_attachments`: When enabled, image attachments are stored as base64 when snoozing with delete behavior, allowing them to be re-uploaded on unsnooze.
-* `snooze_attachment_max_bytes`: Maximum size per attachment to store as base64 (default: 4 MiB).
-* `thread_creation_menu_timeout`: Timeout duration for user interaction with the menu (default: 30 seconds).
-* `thread_creation_menu_close_on_timeout`: Silently abort thread creation if user doesn't select an option.
-* `thread_creation_menu_anonymous_menu`: Anonymize the initial menu prompt relayed to staff.
-* `thread_creation_menu_embed_text`: Text shown in the embed above the selection dropdown.
-* `thread_creation_menu_dropdown_placeholder`: Placeholder text in the dropdown before selection.
-* `thread_creation_menu_selection_log`: Log the chosen menu option in the newly created thread channel.
-* `thread_creation_menu_precreate_channel`: Create thread channel immediately upon first DM even if menu is enabled.
-* `thread_creation_menu_embed_title`: Optional title for the thread-creation menu embed.
-* `thread_creation_menu_embed_footer`: Optional footer text for the menu embed.
-* `thread_creation_menu_embed_footer_icon_url`: Optional URL for the footer icon.
-* `thread_creation_menu_embed_thumbnail_url`: Optional thumbnail image URL.
-* `thread_creation_menu_embed_image_url`: Optional large hero image URL for the menu embed.
-* `thread_creation_menu_embed_large_image`: Promote thumbnail to large hero image if no separate image URL is set.
-* `thread_creation_menu_embed_color`: Color for the menu embed's side strip.
+**Complete Configuration Options:**
+* `thread_creation_send_dm_embed`: True  # Send embed to user when creating a thread DM
+* `thread_creation_menu_enabled`: True  # Boolean to enable or disable the thread-creation menu
+* `thread_creation_menu_close_on_timeout`: False  # Silently abort thread creation if user doesn't select an option
+* `thread_creation_menu_anonymous_menu`: False  # Anonymize the initial menu prompt relayed to staff
+* `thread_creation_menu_selection_log`: True  # Log the chosen menu option in the newly created thread channel
+* `thread_creation_menu_precreate_channel`: False  # Create thread channel immediately upon first DM even if menu is enabled
+* `thread_creation_menu_embed_large_image`: False  # Promote thumbnail to large hero image if no separate image URL is set
+* `thread_min_characters`: 0  # Minimum characters required to create a thread
+* `thread_min_characters_title`: "Message too short"  # Title displayed when message is too short
+* `thread_min_characters_response`: "Your message is too short to create a thread. Please provide more details."  # Response text when message is too short
+* `thread_min_characters_footer`: "Minimum {min_characters} characters required."  # Footer showing required minimum characters
+* `snooze_default_duration`: 604800  # Default snooze duration in seconds (7 days)
+* `snooze_title`: "Thread Snoozed"  # Title for the snooze notification embed
+* `snooze_text`: "This thread has been snoozed. The channel will be restored when the user replies or a moderator unsnoozes it."  # Text displayed when a thread is snoozed
+* `unsnooze_text`: "This thread has been unsnoozed and restored."  # Text displayed when a thread is unsnoozed
+* `unsnooze_notify_channel`: "thread"  # Channel to notify upon unsnooze ('thread' = same thread channel or channel ID)
+* `snooze_behavior`: "delete"  # 'delete' to delete channel, 'move' to move channel to snoozed_category_id
+* `snoozed_category_id`: None  # Category ID to move snoozed channels into when snooze_behavior == 'move'
+* `snooze_store_attachments`: False  # When True, store image attachments as base64 in snooze_data
+* `snooze_attachment_max_bytes`: 4_194_304  # Maximum size per attachment to store as base64 (4 MiB)
+* `unsnooze_history_limit`: None  # Limit number of messages replayed when unsnoozing (None = all messages)
+* `thread_creation_menu_timeout`: 30  # Timeout duration for user interaction with the menu (seconds)
+* `thread_creation_menu_embed_text`: "Please select an option."  # Text shown in the embed above the selection dropdown
+* `thread_creation_menu_dropdown_placeholder`: "Select an option to contact the staff team."  # Placeholder text in the dropdown before selection
+* `thread_creation_menu_embed_title`: None  # Optional title for the thread-creation menu embed
+* `thread_creation_menu_embed_footer`: None  # Optional footer text for the menu embed
+* `thread_creation_menu_embed_thumbnail_url`: None  # Optional thumbnail image URL
+* `thread_creation_menu_embed_image_url`: None  # Optional large hero image URL for the menu embed
+* `thread_creation_menu_embed_footer_icon_url`: None  # Optional URL for the footer icon
+* `thread_creation_menu_embed_color`: str(discord.Color.green())  # Color for the menu embed's side strip
+
 
 **Thread-Creation Menu Feature:**
 * Full thread-creation menu system with interactive select menus:
