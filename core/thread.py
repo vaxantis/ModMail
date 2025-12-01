@@ -2706,7 +2706,6 @@ class ThreadManager:
                     # Resolve option key
                     key = chosen_label.lower().replace(" ", "_")
                     if key == "main_menu":
-                        # From a submenu, go back to main menu. This is achieved by rebuilding the view.
                         option_data = self.bot.config.get("thread_creation_menu_options") or {}
                         new_view = _ThreadCreationMenuView(
                             self.bot,
@@ -2717,23 +2716,34 @@ class ThreadManager:
                             is_home=True,
                         )
                         return await self.menu_msg.edit(view=new_view)
-                    self.path.append(chosen_label)
                     selected: dict = self.option_data.get(key, {})
+                    next_path = [*self.path, chosen_label]
                     if selected.get("type", "command") == "submenu":
-                        # Build new view for submenu
                         submenu_data = self.bot.config.get("thread_creation_menu_submenus") or {}
-                        option_data = submenu_data.get(key, {})
+                        submenu_key = selected.get("callback", key)
+                        option_data = submenu_data.get(submenu_key, {})
+                        if not option_data:
+                            home_options = self.bot.config.get("thread_creation_menu_options") or {}
+                            new_view = _ThreadCreationMenuView(
+                                self.bot,
+                                self.outer_thread,
+                                home_options,
+                                self.menu_msg,
+                                path=[],
+                                is_home=True,
+                            )
+                            return await self.menu_msg.edit(view=new_view)
                         new_view = _ThreadCreationMenuView(
                             self.bot,
                             self.outer_thread,
                             option_data,
                             self.menu_msg,
-                            path=self.path,
+                            path=next_path,
                             is_home=False,
                         )
                         return await self.menu_msg.edit(view=new_view)
 
-                    self.outer_thread._selected_thread_creation_menu_option = self.path
+                    self.outer_thread._selected_thread_creation_menu_option = next_path
                     # Reflect the selection in the original DM by editing the embed/body
                     try:
                         msg = getattr(interaction, "message", None)
@@ -3195,10 +3205,10 @@ class ThreadManager:
                             "Failed unsnoozing thread prior to precreate menu selection; continuing.",
                             exc_info=True,
                         )
-                    # Define selection variables
                     chosen_label = self.values[0]
                     key = chosen_label.lower().replace(" ", "_")
                     selected = options.get(key)
+                    self.outer_thread._selected_thread_creation_menu_option = selected
                     # Remove the view
                     try:
                         msg = getattr(interaction, "message", None)
