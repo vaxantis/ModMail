@@ -254,6 +254,9 @@ class Thread:
         import logging
 
         logging.info(f"[SNOOZE] DB update result: {result.modified_count}")
+        
+        # Dispatch thread_snoozed event for plugins
+        self.bot.dispatch("thread_snoozed", self, moderator, snooze_for)
 
         behavior = behavior_pre
         if behavior == "move":
@@ -746,6 +749,9 @@ class Thread:
 
         # Mark unsnooze as complete
         self._unsnoozing = False
+        
+        # Dispatch thread_unsnoozed event for plugins
+        self.bot.dispatch("thread_unsnoozed", self)
 
         # Process queued commands
         await self._process_command_queue()
