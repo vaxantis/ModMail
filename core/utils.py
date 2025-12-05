@@ -658,39 +658,49 @@ def extract_forwarded_content(message) -> typing.Optional[str]:
 
     try:
         # Handle multi-forward (message_snapshots)
-        if hasattr(message, "flags") and getattr(message.flags, "has_snapshot", False):
-            if hasattr(message, "message_snapshots") and message.message_snapshots:
-                forwarded_parts = []
-                for snap in message.message_snapshots:
-                    author = getattr(snap, "author", None)
-                    author_name = getattr(author, "name", "Unknown") if author else "Unknown"
-                    snap_content = getattr(snap, "content", "")
+        # Check directly for snapshots as flags.has_snapshot can be unreliable in some versions
+        if getattr(message, "message_snapshots", None):
+            forwarded_parts = []
+            for snap in message.message_snapshots:
+                author = getattr(snap, "author", None)
+                # If author is missing, we can try to rely on the container message context or just omit.
+                # Since we can't reliably get the original author from snapshot in this state, we focus on content.
 
-                    if snap_content:
-                        # Truncate very long messages to prevent spam
-                        if len(snap_content) > 500:
-                            snap_content = snap_content[:497] + "..."
-                        forwarded_parts.append(f"**{author_name}:** {snap_content}")
-                    elif getattr(snap, "embeds", None):
-                        for embed in snap.embeds:
-                            if hasattr(embed, "description") and embed.description:
-                                embed_desc = embed.description
-                                if len(embed_desc) > 300:
-                                    embed_desc = embed_desc[:297] + "..."
-                                forwarded_parts.append(f"**{author_name}:** {embed_desc}")
-                                break
-                    elif getattr(snap, "attachments", None):
-                        attachment_info = ", ".join(
-                            [getattr(a, "filename", "Unknown") for a in snap.attachments[:3]]
-                        )
-                        if len(snap.attachments) > 3:
-                            attachment_info += f" (+{len(snap.attachments) - 3} more)"
-                        forwarded_parts.append(f"**{author_name}:** [Attachments: {attachment_info}]")
-                    else:
-                        forwarded_parts.append(f"**{author_name}:** [No content]")
+                snap_content = getattr(snap, "content", "")
 
-                if forwarded_parts:
-                    return "\n".join(forwarded_parts)
+                formatted_part = "📨 **Forwarded Message**\n"
+
+                if snap_content:
+                    if len(snap_content) > 500:
+                        snap_content = snap_content[:497] + "..."
+                    formatted_part += "\n".join([f"{line}" for line in snap_content.splitlines()]) + "\n"
+
+                if getattr(snap, "embeds", None):
+                    for embed in snap.embeds:
+                        if hasattr(embed, "description") and embed.description:
+                            embed_desc = embed.description
+                            if len(embed_desc) > 300:
+                                embed_desc = embed_desc[:297] + "..."
+                            formatted_part += (
+                                "\n".join([f"> {line}" for line in embed_desc.splitlines()]) + "\n"
+                            )
+                            break  # One embed preview is usually enough
+
+                if getattr(snap, "attachments", None):
+                    attachment_info = ", ".join(
+                        [getattr(a, "filename", "Unknown") for a in snap.attachments[:3]]
+                    )
+                    if len(snap.attachments) > 3:
+                        attachment_info += f" (+{len(snap.attachments) - 3} more)"
+                    formatted_part += f"[Attachments: {attachment_info}]\n"
+
+                # Add source link to the container message since snapshot doesn't have its own public link
+                formatted_part += f"\n**Source:** {message.jump_url}"
+
+                forwarded_parts.append(formatted_part)
+
+            if forwarded_parts:
+                return "\n".join(forwarded_parts)
 
         # Handle single-message forward
         elif getattr(message, "type", None) == getattr(discord.MessageType, "forward", None):
