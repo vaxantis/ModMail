@@ -2134,11 +2134,7 @@ class Utility(commands.Cog):
             data = await self.bot.api.get_user_info()
             if data:
                 user = data["user"]
-                embed.set_author(
-                    name=user["username"],
-                    icon_url=user["avatar_url"] if user["avatar_url"] else None,
-                    url=user["url"],
-                )
+                embed.set_author(name=user["username"], icon_url=user["avatar_url"], url=user["url"])
             await ctx.send(embed=embed)
         else:
             error = None
@@ -2177,7 +2173,7 @@ class Utility(commands.Cog):
 
                     embed.set_author(
                         name=user["username"] + " - Updating bot",
-                        icon_url=user["avatar_url"] if user["avatar_url"] else None,
+                        icon_url=user["avatar_url"],
                         url=user["url"],
                     )
 
@@ -2195,13 +2191,18 @@ class Utility(commands.Cog):
                         color=self.bot.main_color,
                     )
                     embed.set_footer(text="Force update")
-                    embed.set_author(
-                        name=user["username"],
-                        icon_url=user["avatar_url"] if user["avatar_url"] else None,
-                        url=user["url"],
-                    )
+                    embed.set_author(name=user["username"], icon_url=user["avatar_url"], url=user["url"])
                 await ctx.send(embed=embed)
             else:
+                if self.bot.check_local_git() is False:
+                    embed = discord.Embed(
+                        title="Update Command Unavailable",
+                        description="The bot cannot be updated due to not being installed via git."
+                        "You need to manually update the bot according to your hosting method."
+                        "If you face any issues please don´t hesitate to contact modmail support.",
+                        color=discord.Color.red(),
+                    )
+                    return await ctx.send(embed=embed)
                 command = "git pull"
                 proc = await asyncio.create_subprocess_shell(
                     command,
@@ -2214,11 +2215,7 @@ class Utility(commands.Cog):
                 res = res.decode("utf-8").rstrip()
 
                 if err and not res:
-                    embed = discord.Embed(
-                        title="Update failed",
-                        description=err,
-                        color=self.bot.error_color,
-                    )
+                    embed = discord.Embed(title="Update failed", description=err, color=self.bot.error_color)
                     await ctx.send(embed=embed)
 
                 elif res != "Already up to date.":
