@@ -97,7 +97,8 @@ class ThreadCreationMenuCore(commands.Cog):
         ):
             await ctx.send(
                 "**Warning:** You are using both the core threadmenu feature and the advancedmenu plugin.\n"
-                "It is recommended to disable/uninstall the advancedmenu plugin to avoid interruption."
+                "It is recommended to disable/uninstall the advancedmenu plugin to avoid interruption.\n"
+                "Migration guide can be found at: <https://docs.modmail.dev/usage-guide/threadmenu#advanced-legacy-usage>"
             )
 
     @checks.has_permissions(PermissionLevel.ADMINISTRATOR)
