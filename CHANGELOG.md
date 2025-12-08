@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project mostly adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 however, insignificant breaking changes do not guarantee a major version bump, see the reasoning [here](https://github.com/modmail-dev/modmail/issues/319). If you're a plugin developer, note the "BREAKING" section.
 
+# v4.2.2
+
+### Added
+- Ability to rename snippets and aliases [#3383](https://github.com/modmail-dev/Modmail/pull/3412)
+- Bot events when threads is snoozed/unsnoozed [#3412](https://github.com/modmail-dev/Modmail/pull/3412)
+- Check for threadmenu and advancedmenu being enabled concurrently. [#3411](https://github.com/modmail-dev/Modmail/pull/3411)
+- Check for git installation before attempting autoupdate or update command. [#3406](https://github.com/modmail-dev/Modmail/pull/3406)
+
+### Changed 
+- Updated details on v4.2.1 changelog to better explain changes [#3409](https://github.com/modmail-dev/Modmail/pull/3409)
+- Updated plugin registry [#3409](https://github.com/modmail-dev/Modmail/pull/3409)
+- Updated bot dependencies to reflect more current versions. [#3412](https://github.com/modmail-dev/Modmail/pull/3412)
+
+### Fixed
+- Forwarded messages now show when using logviewer. [#3414](https://github.com/modmail-dev/Modmail/pull/3414)
+- Submenu options now work when using built-in threadmenu. [#3404](https://github.com/modmail-dev/Modmail/pull/3404)
+- Missing `@` and incorrect link in plugin help command. [#3322](https://github.com/modmail-dev/Modmail/pull/3322)
+- Fixed typo in config help for `thread_close_response` and `thread_self_close_response` [#3407](https://github.com/modmail-dev/Modmail/pull/3407)
+
+
 # v4.2.1
 
 ### Added
