@@ -1524,8 +1524,10 @@ class Utility(commands.Cog):
             return await ctx.send(f"Invalid permission level: `{level_name}`. Aborting.")
 
         # Confirmation
-        command_list_str = ", ".join(f"`{c.qualified_name}`" for c in sorted(final_commands, key=lambda x: x.qualified_name))
-        
+        command_list_str = ", ".join(
+            f"`{c.qualified_name}`" for c in sorted(final_commands, key=lambda x: x.qualified_name)
+        )
+
         # Truncate if too long for embed description
         if len(command_list_str) > 2000:
             command_list_str = command_list_str[:1997] + "..."
@@ -1541,7 +1543,9 @@ class Utility(commands.Cog):
         try:
             msg = await self.bot.wait_for(
                 "message",
-                check=lambda m: m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ("confirm", "cancel"),
+                check=lambda m: m.author == ctx.author
+                and m.channel == ctx.channel
+                and m.content.lower() in ("confirm", "cancel"),
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
@@ -1555,9 +1559,9 @@ class Utility(commands.Cog):
         for cmd in final_commands:
             self.bot.config["override_command_level"][cmd.qualified_name] = level.name
             count += 1
-        
+
         await self.bot.config.update()
-        
+
         await ctx.send(f"Successfully updated permissions for {count} commands.")
 
     @permissions.command(name="add", usage="[command/level] [name] [user/role]")
