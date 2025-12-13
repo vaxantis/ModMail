@@ -224,16 +224,12 @@ class Thread:
                     "author_name": (
                         getattr(m.embeds[0].author, "name", "").split(" (")[0]
                         if m.embeds and m.embeds[0].author and m.author == self.bot.user
-                        else getattr(m.author, "name", None)
-                        if m.author != self.bot.user
-                        else None
+                        else getattr(m.author, "name", None) if m.author != self.bot.user else None
                     ),
                     "author_avatar": (
                         getattr(m.embeds[0].author, "icon_url", None)
                         if m.embeds and m.embeds[0].author and m.author == self.bot.user
-                        else m.author.display_avatar.url
-                        if m.author != self.bot.user
-                        else None
+                        else m.author.display_avatar.url if m.author != self.bot.user else None
                     ),
                 }
                 async for m in channel.history(limit=None, oldest_first=True)
@@ -1331,117 +1327,108 @@ class Thread:
         message1: discord.Message = None,
         note: bool = True,
     ) -> typing.Tuple[discord.Message, typing.List[typing.Optional[discord.Message]]]:
-        if message1 is not None:
-            if note:
-                # For notes, don't require author.url; rely on footer/author.name markers
-                if not message1.embeds or message1.author != self.bot.user:
-                    logger.warning(
-                        f"Malformed note for deletion: embeds={bool(message1.embeds)}, author={message1.author}"
-                    )
-                    raise ValueError("Malformed note message.")
+        if message1 is None:
+            if message_id is not None:
+                try:
+                    message1 = await self.channel.fetch_message(message_id)
+                except discord.NotFound:
+                    logger.warning(f"Message ID {message_id} not found in channel history.")
+                    raise ValueError("Thread message not found.")
             else:
-                if (
-                    not message1.embeds
-                    or not message1.embeds[0].author.url
-                    or message1.author != self.bot.user
-                ):
-                    is_plain = False
-                    if message1.embeds and message1.embeds[0].footer and message1.embeds[0].footer.text:
-                        if message1.embeds[0].footer.text.startswith("[PLAIN]"):
-                            is_plain = True
+                # No ID provided - find last message sent by bot
+                async for msg in self.channel.history():
+                    if msg.author != self.bot.user:
+                        continue
+                    if not msg.embeds:
+                        continue
 
-                    if not is_plain:
-                        logger.debug(
-                            f"Malformed thread message for deletion: embeds={bool(message1.embeds)}, author_url={getattr(message1.embeds[0], 'author', None) and message1.embeds[0].author.url}, author={message1.author}"
-                        )
-                        # Keep original error string to avoid extra failure embeds in on_message_delete
-                        raise ValueError("Malformed thread message.")
+                    is_valid_candidate = False
+                    if (
+                        msg.embeds[0].footer
+                        and msg.embeds[0].footer.text
+                        and msg.embeds[0].footer.text.startswith("[PLAIN]")
+                    ):
+                        is_valid_candidate = True
+                    elif msg.embeds[0].author.url and msg.embeds[0].author.url.split("#")[-1].isdigit():
+                        is_valid_candidate = True
 
-        elif message_id is not None:
-            try:
-                message1 = await self.channel.fetch_message(message_id)
-            except discord.NotFound:
-                logger.warning(f"Message ID {message_id} not found in channel history.")
-                raise ValueError("Thread message not found.")
+                    if is_valid_candidate:
+                        message1 = msg
+                        break
 
-            if note:
-                # Try to treat as note/persistent note first
-                if message1.embeds and message1.author == self.bot.user:
-                    footer_text = (message1.embeds[0].footer and message1.embeds[0].footer.text) or ""
-                    author_name = getattr(message1.embeds[0].author, "name", "") or ""
-                    is_note = (
-                        "internal note" in footer_text.lower()
-                        or "persistent internal note" in footer_text.lower()
-                        or author_name.startswith("📝 Note")
-                        or author_name.startswith("📝 Persistent Note")
-                    )
-                    if is_note:
-                        # Notes have no linked DM counterpart; keep None sentinel
-                        return message1, None
-                # else: fall through to relay checks below
+                if message1 is None:
+                    raise ValueError("No editable thread message found.")
 
-            is_plain = False
-            if message1.embeds and message1.embeds[0].footer and message1.embeds[0].footer.text:
-                if message1.embeds[0].footer.text.startswith("[PLAIN]"):
-                    is_plain = True
+        is_note = False
+        if message1.embeds and message1.author == self.bot.user:
+            footer_text = (message1.embeds[0].footer and message1.embeds[0].footer.text) or ""
+            author_name = getattr(message1.embeds[0].author, "name", "") or ""
+            is_note = (
+                "internal note" in footer_text.lower()
+                or "persistent internal note" in footer_text.lower()
+                or author_name.startswith("📝 Note")
+                or author_name.startswith("📝 Persistent Note")
+            )
 
-            if is_plain:
-                creation_time = message1.created_at
-                
-                mod_tag = message1.embeds[0].footer.text.replace("[PLAIN]", "", 1).strip()
-                author_name = message1.embeds[0].author.name
-                desc = message1.embeds[0].description or ""
-                prefix = f"**{mod_tag} " if mod_tag else "**"
-                plain_content_expected = f"{prefix}{author_name}:** {desc}"
-                
-                messages = [message1]
-                for user in self.recipients:
-                    async for msg in user.history(limit=50, around=creation_time):
-                        if abs((msg.created_at - creation_time).total_seconds()) > 15:
-                            continue
-                        if msg.author != self.bot.user:
-                            continue
-                        if msg.embeds:
-                            continue
+        if note and is_note:
+            return message1, None
 
-                        if msg.content == plain_content_expected:
-                            messages.append(msg)
-                            break
-                            
-                if len(messages) > 1:
-                    return messages
-                raise ValueError("Linked Plain DM message not found.")
+        if not note and is_note:
+            logger.warning("Message is an internal message, but note deletion/edit not requested.")
+            raise ValueError("Thread message is an internal message, not a note.")
 
-            if not is_plain and not (
-                message1.embeds
-                and message1.embeds[0].author.url
-                and message1.embeds[0].color
-                and message1.author == self.bot.user
-            ):
+        if is_note:
+            return message1, None
+
+        is_plain = False
+        if message1.embeds and message1.embeds[0].footer and message1.embeds[0].footer.text:
+            if message1.embeds[0].footer.text.startswith("[PLAIN]"):
+                is_plain = True
+
+        if not is_plain:
+            # Relaxed mod_color check: only ensure author is bot and has url (which implies it's a relay)
+            # We rely on author.url existing for Joint ID
+            if not (message1.embeds and message1.embeds[0].author.url and message1.author == self.bot.user):
                 logger.warning(
-                    f"Message {message_id} is not a valid modmail relay message. embeds={bool(message1.embeds)}, author_url={getattr(message1.embeds[0], 'author', None) and message1.embeds[0].author.url}, color={getattr(message1.embeds[0], 'color', None)}, author={message1.author}"
+                    f"Message {message1.id} is not a valid modmail relay message. embeds={bool(message1.embeds)}, author={message1.author}"
                 )
                 raise ValueError("Thread message not found.")
-
-            if message1.embeds[0].footer and "Internal Message" in message1.embeds[0].footer.text:
-                logger.warning(
-                    f"Message {message_id} is an internal message, but note deletion not requested."
-                )
-                raise ValueError("Thread message is an internal message, not a note.")
-                # Internal bot-only message treated similarly; keep None sentinel
-                return message1, None
 
             try:
                 joint_id = int(message1.embeds[0].author.url.split("#")[-1])
-            except ValueError:
+            except (ValueError, AttributeError, IndexError):
                 raise ValueError("Malformed thread message.")
-                
-            messages = [message1]
+        else:
+            joint_id = None
+            mod_tag = message1.embeds[0].footer.text.replace("[PLAIN]", "", 1).strip()
+            author_name = message1.embeds[0].author.name
+            desc = message1.embeds[0].description or ""
+            prefix = f"**{mod_tag} " if mod_tag else "**"
+            plain_content_expected = f"{prefix}{author_name}:** {desc}"
+            creation_time = message1.created_at
+
+        messages = [message1]
+
+        if is_plain:
+            for user in self.recipients:
+                async for msg in user.history(limit=50, around=creation_time):
+                    if abs((msg.created_at - creation_time).total_seconds()) > 15:
+                        continue
+                    if msg.author != self.bot.user:
+                        continue
+                    if msg.embeds:
+                        continue
+
+                    if msg.content == plain_content_expected:
+                        messages.append(msg)
+                        break
+        else:
             for user in self.recipients:
                 async for msg in user.history():
                     if either_direction:
                         if msg.id == joint_id:
-                            return message1, msg
+                            messages.append(msg)
+                            break
 
                     if not (msg.embeds and msg.embeds[0].author.url):
                         continue
@@ -1449,13 +1436,13 @@ class Thread:
                         if int(msg.embeds[0].author.url.split("#")[-1]) == joint_id:
                             messages.append(msg)
                             break
-                    except ValueError:
+                    except (ValueError, IndexError, AttributeError):
                         continue
 
-            if len(messages) > 1:
-                return messages
+        if len(messages) > 1:
+            return messages
 
-            raise ValueError("DM message not found.")
+        raise ValueError("Linked DM message not found.")
 
     async def edit_message(self, message_id: typing.Optional[int], message: str) -> None:
         try:
@@ -1480,9 +1467,17 @@ class Thread:
         else:
             for m2 in message2:
                 if m2 is not None:
-                    embed2 = m2.embeds[0]
-                    embed2.description = message
-                    tasks += [m2.edit(embed=embed2)]
+                    if is_plain:
+                        # Reconstruct the plain message format to preserve matching capability
+                        mod_tag = embed1.footer.text.replace("[PLAIN]", "", 1).strip()
+                        author_name = embed1.author.name
+                        prefix = f"**{mod_tag} " if mod_tag else "**"
+                        new_content = f"{prefix}{author_name}:** {message}"
+                        tasks += [m2.edit(content=new_content)]
+                    else:
+                        embed2 = m2.embeds[0]
+                        embed2.description = message
+                        tasks += [m2.edit(embed=embed2)]
 
         await asyncio.gather(*tasks)
 
