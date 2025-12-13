@@ -224,16 +224,12 @@ class Thread:
                     "author_name": (
                         getattr(m.embeds[0].author, "name", "").split(" (")[0]
                         if m.embeds and m.embeds[0].author and m.author == self.bot.user
-                        else getattr(m.author, "name", None)
-                        if m.author != self.bot.user
-                        else None
+                        else getattr(m.author, "name", None) if m.author != self.bot.user else None
                     ),
                     "author_avatar": (
                         getattr(m.embeds[0].author, "icon_url", None)
                         if m.embeds and m.embeds[0].author and m.author == self.bot.user
-                        else m.author.display_avatar.url
-                        if m.author != self.bot.user
-                        else None
+                        else m.author.display_avatar.url if m.author != self.bot.user else None
                     ),
                 }
                 async for m in channel.history(limit=None, oldest_first=True)
@@ -1345,11 +1341,17 @@ class Thread:
                     or not message1.embeds[0].author.url
                     or message1.author != self.bot.user
                 ):
-                    logger.debug(
-                        f"Malformed thread message for deletion: embeds={bool(message1.embeds)}, author_url={getattr(message1.embeds[0], 'author', None) and message1.embeds[0].author.url}, author={message1.author}"
-                    )
-                    # Keep original error string to avoid extra failure embeds in on_message_delete
-                    raise ValueError("Malformed thread message.")
+                    is_plain = False
+                    if message1.embeds and message1.embeds[0].footer and message1.embeds[0].footer.text:
+                        if message1.embeds[0].footer.text.startswith("[PLAIN]"):
+                            is_plain = True
+
+                    if not is_plain:
+                        logger.debug(
+                            f"Malformed thread message for deletion: embeds={bool(message1.embeds)}, author_url={getattr(message1.embeds[0], 'author', None) and message1.embeds[0].author.url}, author={message1.author}"
+                        )
+                        # Keep original error string to avoid extra failure embeds in on_message_delete
+                        raise ValueError("Malformed thread message.")
 
         elif message_id is not None:
             try:
@@ -1374,8 +1376,12 @@ class Thread:
                         return message1, None
                 # else: fall through to relay checks below
 
-            # Non-note path (regular relayed messages): require author.url and colors
-            if not (
+            is_plain = False
+            if message1.embeds and message1.embeds[0].footer and message1.embeds[0].footer.text:
+                if message1.embeds[0].footer.text.startswith("[PLAIN]"):
+                    is_plain = True
+
+            if not is_plain and not (
                 message1.embeds
                 and message1.embeds[0].author.url
                 and message1.embeds[0].color
@@ -1395,8 +1401,10 @@ class Thread:
                 # Internal bot-only message treated similarly; keep None sentinel
                 return message1, None
 
-            if message1.embeds[0].color.value != self.bot.mod_color and not (
-                either_direction and message1.embeds[0].color.value == self.bot.recipient_color
+            if (
+                not is_plain
+                and message1.embeds[0].color.value != self.bot.mod_color
+                and not (either_direction and message1.embeds[0].color.value == self.bot.recipient_color)
             ):
                 logger.warning("Message color does not match mod/recipient colors.")
                 raise ValueError("Thread message not found.")
@@ -1404,18 +1412,61 @@ class Thread:
             async for message1 in self.channel.history():
                 if (
                     message1.embeds
-                    and message1.embeds[0].author.url
-                    and message1.embeds[0].color
                     and (
-                        message1.embeds[0].color.value == self.bot.mod_color
-                        or (either_direction and message1.embeds[0].color.value == self.bot.recipient_color)
+                        (
+                            message1.embeds[0].author.url
+                            and message1.embeds[0].color
+                            and (
+                                message1.embeds[0].color.value == self.bot.mod_color
+                                or (
+                                    either_direction
+                                    and message1.embeds[0].color.value == self.bot.recipient_color
+                                )
+                            )
+                            and message1.embeds[0].author.url.split("#")[-1].isdigit()
+                        )
+                        or (
+                            message1.embeds[0].footer
+                            and message1.embeds[0].footer.text
+                            and message1.embeds[0].footer.text.startswith("[PLAIN]")
+                        )
                     )
-                    and message1.embeds[0].author.url.split("#")[-1].isdigit()
                     and message1.author == self.bot.user
                 ):
                     break
             else:
                 raise ValueError("Thread message not found.")
+
+        is_plain = False
+        if message1.embeds and message1.embeds[0].footer and message1.embeds[0].footer.text:
+            if message1.embeds[0].footer.text.startswith("[PLAIN]"):
+                is_plain = True
+
+        if is_plain:
+            messages = [message1]
+            creation_time = message1.created_at
+
+            target_content = message1.embeds[0].description
+
+            for user in self.recipients:
+                async for msg in user.history(limit=50, around=creation_time):
+                    if abs((msg.created_at - creation_time).total_seconds()) > 15:
+                        continue
+
+                    if msg.author != self.bot.user:
+                        continue
+
+                    if msg.embeds:
+                        continue
+
+                    if target_content and target_content in msg.content:
+                        messages.append(msg)
+                        break
+
+            if len(messages) > 1:
+                return messages
+
+            raise ValueError("Linked Plain DM message not found.")
 
         try:
             joint_id = int(message1.embeds[0].author.url.split("#")[-1])
@@ -1453,6 +1504,10 @@ class Thread:
         embed1 = message1.embeds[0]
         embed1.description = message
 
+        is_plain = False
+        if embed1.footer and embed1.footer.text and embed1.footer.text.startswith("[PLAIN]"):
+            is_plain = True
+
         tasks = [
             self.bot.api.edit_message(message1.id, message),
             message1.edit(embed=embed1),
@@ -1462,9 +1517,17 @@ class Thread:
         else:
             for m2 in message2:
                 if m2 is not None:
-                    embed2 = m2.embeds[0]
-                    embed2.description = message
-                    tasks += [m2.edit(embed=embed2)]
+                    if is_plain:
+                        if ":** " in m2.content:
+                            prefix = m2.content.split(":** ", 1)[0] + ":** "
+                            new_content = f"{prefix}{message}"
+                            tasks += [m2.edit(content=new_content)]
+                        else:
+                            tasks += [m2.edit(content=message)]
+                    else:
+                        embed2 = m2.embeds[0]
+                        embed2.description = message
+                        tasks += [m2.edit(embed=embed2)]
 
         await asyncio.gather(*tasks)
 
