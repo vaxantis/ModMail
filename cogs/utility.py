@@ -1382,7 +1382,7 @@ class Utility(commands.Cog):
 
     @permissions.command(name="override")
     @checks.has_permissions(PermissionLevel.OWNER)
-    async def permissions_override(self, ctx, command_name: str.lower, *, level_name: str):
+    async def permissions_override(self, ctx, command_name: str.lower, *, level_name: str = None):
         """
         Change a permission level for a specific command.
 
@@ -1396,8 +1396,16 @@ class Utility(commands.Cog):
         - `{prefix}perms remove override reply`
         - `{prefix}perms remove override plugin enabled`
 
+        You can also override multiple commands at once using:
+        - `{prefix}perms override bulk`
+
         You can retrieve a single or all command level override(s), see`{prefix}help permissions get`.
         """
+        if command_name == "bulk":
+            return await self._bulk_override_flow(ctx)
+
+        if level_name is None:
+            raise commands.MissingRequiredArgument(DummyParam("level_name"))
 
         command = self.bot.get_command(command_name)
         if command is None:
@@ -1431,6 +1439,126 @@ class Utility(commands.Cog):
                 f"`{command.qualified_name}` to `{level.name}`.",
             )
         return await ctx.send(embed=embed)
+
+    async def _bulk_override_flow(self, ctx):
+        await ctx.send(
+            "Please list the commands you want to override. "
+            "You can list multiple commands separated by spaces or newlines.\n"
+            "Example: `ban, kick, mod`."
+        )
+
+        try:
+            msg = await self.bot.wait_for(
+                "message",
+                check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
+                timeout=120.0,
+            )
+        except asyncio.TimeoutError:
+            return await ctx.send("Timed out.")
+
+        raw_commands = msg.content.replace(",", " ").replace("\n", " ").split(" ")
+        # Filter empty strings from split
+        raw_commands = [c for c in raw_commands if c.strip()]
+
+        found_commands = []
+        invalid_commands = []
+
+        for cmd_name in raw_commands:
+            cmd = self.bot.get_command(cmd_name)
+            if cmd:
+                found_commands.append(cmd)
+            else:
+                invalid_commands.append(cmd_name)
+
+        if invalid_commands:
+            embed = discord.Embed(
+                title="Invalid Commands Found",
+                description=f"The following commands were not found:\n`{', '.join(invalid_commands)}`\n\n"
+                "Do you want to continue with the valid commands? (y/n)",
+                color=self.bot.error_color,
+            )
+            await ctx.send(embed=embed)
+            try:
+                msg = await self.bot.wait_for(
+                    "message",
+                    check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
+                    timeout=60.0,
+                )
+                if msg.content.lower() not in ("y", "yes"):
+                    return await ctx.send("Aborted.")
+            except asyncio.TimeoutError:
+                return await ctx.send("Timed out.")
+
+        if not found_commands:
+            return await ctx.send("No valid commands provided. Aborting.")
+
+        # Expand subcommands
+        final_commands = set()
+
+        def add_command_recursive(cmd):
+            final_commands.add(cmd)
+            if hasattr(cmd, "commands"):
+                for sub in cmd.commands:
+                    add_command_recursive(sub)
+
+        for cmd in found_commands:
+            add_command_recursive(cmd)
+
+        await ctx.send(
+            f"Found {len(final_commands)} commands (including subcommands).\n"
+            "What permission level should these commands be set to? (e.g. `Owner`, `Admin`, `Moderator`, `Supporter`, `User`)"
+        )
+
+        try:
+            msg = await self.bot.wait_for(
+                "message",
+                check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
+                timeout=60.0,
+            )
+        except asyncio.TimeoutError:
+            return await ctx.send("Timed out.")
+
+        level_name = msg.content
+        level = self._parse_level(level_name)
+        if level == PermissionLevel.INVALID:
+            return await ctx.send(f"Invalid permission level: `{level_name}`. Aborting.")
+
+        # Confirmation
+        command_list_str = ", ".join(f"`{c.qualified_name}`" for c in sorted(final_commands, key=lambda x: x.qualified_name))
+        
+        # Truncate if too long for embed description
+        if len(command_list_str) > 2000:
+            command_list_str = command_list_str[:1997] + "..."
+
+        embed = discord.Embed(
+            title="Confirm Bulk Override",
+            description=f"**Level:** {level.name}\n\n**Commands:**\n{command_list_str}\n\n"
+            "Type `confirm` to apply these changes or `cancel` to abort.",
+            color=self.bot.main_color,
+        )
+        await ctx.send(embed=embed)
+
+        try:
+            msg = await self.bot.wait_for(
+                "message",
+                check=lambda m: m.author == ctx.author and m.channel == ctx.channel and m.content.lower() in ("confirm", "cancel"),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            return await ctx.send("Timed out. No changes applied.")
+
+        if msg.content.lower() == "cancel":
+            return await ctx.send("Aborted.")
+
+        # Apply changes
+        count = 0
+        for cmd in final_commands:
+            self.bot.config["override_command_level"][cmd.qualified_name] = level.name
+            count += 1
+        
+        await self.bot.config.update()
+        
+        await ctx.send(f"Successfully updated permissions for {count} commands.")
 
     @permissions.command(name="add", usage="[command/level] [name] [user/role]")
     @checks.has_permissions(PermissionLevel.OWNER)
