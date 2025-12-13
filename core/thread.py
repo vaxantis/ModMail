@@ -1385,6 +1385,33 @@ class Thread:
                 if message1.embeds[0].footer.text.startswith("[PLAIN]"):
                     is_plain = True
 
+            if is_plain:
+                creation_time = message1.created_at
+                
+                mod_tag = message1.embeds[0].footer.text.replace("[PLAIN]", "", 1).strip()
+                author_name = message1.embeds[0].author.name
+                desc = message1.embeds[0].description or ""
+                prefix = f"**{mod_tag} " if mod_tag else "**"
+                plain_content_expected = f"{prefix}{author_name}:** {desc}"
+                
+                messages = [message1]
+                for user in self.recipients:
+                    async for msg in user.history(limit=50, around=creation_time):
+                        if abs((msg.created_at - creation_time).total_seconds()) > 15:
+                            continue
+                        if msg.author != self.bot.user:
+                            continue
+                        if msg.embeds:
+                            continue
+
+                        if msg.content == plain_content_expected:
+                            messages.append(msg)
+                            break
+                            
+                if len(messages) > 1:
+                    return messages
+                raise ValueError("Linked Plain DM message not found.")
+
             if not is_plain and not (
                 message1.embeds
                 and message1.embeds[0].author.url
@@ -1397,106 +1424,38 @@ class Thread:
                 raise ValueError("Thread message not found.")
 
             if message1.embeds[0].footer and "Internal Message" in message1.embeds[0].footer.text:
-                if not note:
-                    logger.warning(
-                        f"Message {message_id} is an internal message, but note deletion not requested."
-                    )
-                    raise ValueError("Thread message is an internal message, not a note.")
+                logger.warning(
+                    f"Message {message_id} is an internal message, but note deletion not requested."
+                )
+                raise ValueError("Thread message is an internal message, not a note.")
                 # Internal bot-only message treated similarly; keep None sentinel
                 return message1, None
 
-            if (
-                not is_plain
-                and message1.embeds[0].color.value != self.bot.mod_color
-                and not (either_direction and message1.embeds[0].color.value == self.bot.recipient_color)
-            ):
-                logger.warning("Message color does not match mod/recipient colors.")
-                raise ValueError("Thread message not found.")
-        else:
-            async for message1 in self.channel.history():
-                if (
-                    message1.embeds
-                    and (
-                        (
-                            message1.embeds[0].author.url
-                            and message1.embeds[0].color
-                            and (
-                                message1.embeds[0].color.value == self.bot.mod_color
-                                or (
-                                    either_direction
-                                    and message1.embeds[0].color.value == self.bot.recipient_color
-                                )
-                            )
-                            and message1.embeds[0].author.url.split("#")[-1].isdigit()
-                        )
-                        or (
-                            message1.embeds[0].footer
-                            and message1.embeds[0].footer.text
-                            and message1.embeds[0].footer.text.startswith("[PLAIN]")
-                        )
-                    )
-                    and message1.author == self.bot.user
-                ):
-                    break
-            else:
-                raise ValueError("Thread message not found.")
-
-        is_plain = False
-        if message1.embeds and message1.embeds[0].footer and message1.embeds[0].footer.text:
-            if message1.embeds[0].footer.text.startswith("[PLAIN]"):
-                is_plain = True
-
-        if is_plain:
+            try:
+                joint_id = int(message1.embeds[0].author.url.split("#")[-1])
+            except ValueError:
+                raise ValueError("Malformed thread message.")
+                
             messages = [message1]
-            creation_time = message1.created_at
-
-            target_content = message1.embeds[0].description
-
             for user in self.recipients:
-                async for msg in user.history(limit=50, around=creation_time):
-                    if abs((msg.created_at - creation_time).total_seconds()) > 15:
-                        continue
+                async for msg in user.history():
+                    if either_direction:
+                        if msg.id == joint_id:
+                            return message1, msg
 
-                    if msg.author != self.bot.user:
+                    if not (msg.embeds and msg.embeds[0].author.url):
                         continue
-
-                    if msg.embeds:
+                    try:
+                        if int(msg.embeds[0].author.url.split("#")[-1]) == joint_id:
+                            messages.append(msg)
+                            break
+                    except ValueError:
                         continue
-
-                    if target_content and target_content in msg.content:
-                        messages.append(msg)
-                        break
 
             if len(messages) > 1:
                 return messages
 
-            raise ValueError("Linked Plain DM message not found.")
-
-        try:
-            joint_id = int(message1.embeds[0].author.url.split("#")[-1])
-        except ValueError:
-            raise ValueError("Malformed thread message.")
-
-        messages = [message1]
-        for user in self.recipients:
-            async for msg in user.history():
-                if either_direction:
-                    if msg.id == joint_id:
-                        return message1, msg
-
-                if not (msg.embeds and msg.embeds[0].author.url):
-                    continue
-                try:
-                    if int(msg.embeds[0].author.url.split("#")[-1]) == joint_id:
-                        messages.append(msg)
-                        break
-                except ValueError:
-                    continue
-
-        if len(messages) > 1:
-            return messages
-
-        raise ValueError("DM message not found.")
+            raise ValueError("DM message not found.")
 
     async def edit_message(self, message_id: typing.Optional[int], message: str) -> None:
         try:
@@ -1521,17 +1480,9 @@ class Thread:
         else:
             for m2 in message2:
                 if m2 is not None:
-                    if is_plain:
-                        if ":** " in m2.content:
-                            prefix = m2.content.split(":** ", 1)[0] + ":** "
-                            new_content = f"{prefix}{message}"
-                            tasks += [m2.edit(content=new_content)]
-                        else:
-                            tasks += [m2.edit(content=message)]
-                    else:
-                        embed2 = m2.embeds[0]
-                        embed2.description = message
-                        tasks += [m2.edit(embed=embed2)]
+                    embed2 = m2.embeds[0]
+                    embed2.description = message
+                    tasks += [m2.edit(embed=embed2)]
 
         await asyncio.gather(*tasks)
 
