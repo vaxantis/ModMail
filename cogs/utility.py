@@ -1460,7 +1460,9 @@ class Utility(commands.Cog):
             )
 
         except asyncio.TimeoutError:
-            return await ctx.send(embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color))
+            return await ctx.send(
+                embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color)
+            )
 
         raw_commands = msg.content.replace(",", " ").replace("\n", " ").split(" ")
         # Filter empty strings from split
@@ -1469,8 +1471,7 @@ class Utility(commands.Cog):
         if self.bot.prefix:
             # Strip prefix from commands if present
             raw_commands = [
-                c[len(self.bot.prefix) :] if c.startswith(self.bot.prefix) else c
-                for c in raw_commands
+                c[len(self.bot.prefix) :] if c.startswith(self.bot.prefix) else c for c in raw_commands
             ]
 
         found_commands = []
@@ -1506,12 +1507,16 @@ class Utility(commands.Cog):
                         )
                     )
             except asyncio.TimeoutError:
-                return await ctx.send(embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color))
+                return await ctx.send(
+                    embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color)
+                )
 
         if not found_commands:
             return await ctx.send(
                 embed=discord.Embed(
-                    title="Error", description="No valid commands provided. Aborting.", color=self.bot.error_color
+                    title="Error",
+                    description="No valid commands provided. Aborting.",
+                    color=self.bot.error_color,
                 )
             )
 
@@ -1545,7 +1550,9 @@ class Utility(commands.Cog):
             )
 
         except asyncio.TimeoutError:
-            return await ctx.send(embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color))
+            return await ctx.send(
+                embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color)
+            )
 
         level_name = msg.content
         level = self._parse_level(level_name)
