@@ -1441,11 +1441,16 @@ class Utility(commands.Cog):
         return await ctx.send(embed=embed)
 
     async def _bulk_override_flow(self, ctx):
-        await ctx.send(
-            "Please list the commands you want to override. "
-            "You can list multiple commands separated by spaces or newlines.\n"
-            "Example: `ban, kick, mod`."
+        embed = discord.Embed(
+            title="Bulk Override",
+            description=(
+                "Please list the commands you want to override. "
+                "You can list multiple commands separated by spaces or newlines.\n"
+                "Example: `reply, block, unblock`."
+            ),
+            color=self.bot.main_color,
         )
+        await ctx.send(embed=embed)
 
         try:
             msg = await self.bot.wait_for(
@@ -1453,12 +1458,20 @@ class Utility(commands.Cog):
                 check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
                 timeout=120.0,
             )
+
         except asyncio.TimeoutError:
-            return await ctx.send("Timed out.")
+            return await ctx.send(embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color))
 
         raw_commands = msg.content.replace(",", " ").replace("\n", " ").split(" ")
         # Filter empty strings from split
         raw_commands = [c for c in raw_commands if c.strip()]
+
+        if self.bot.prefix:
+            # Strip prefix from commands if present
+            raw_commands = [
+                c[len(self.bot.prefix) :] if c.startswith(self.bot.prefix) else c
+                for c in raw_commands
+            ]
 
         found_commands = []
         invalid_commands = []
@@ -1485,12 +1498,22 @@ class Utility(commands.Cog):
                     timeout=60.0,
                 )
                 if msg.content.lower() not in ("y", "yes"):
-                    return await ctx.send("Aborted.")
+                    return await ctx.send(
+                        embed=discord.Embed(
+                            title="Operation Aborted",
+                            description="No changes have been applied.",
+                            color=self.bot.error_color,
+                        )
+                    )
             except asyncio.TimeoutError:
-                return await ctx.send("Timed out.")
+                return await ctx.send(embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color))
 
         if not found_commands:
-            return await ctx.send("No valid commands provided. Aborting.")
+            return await ctx.send(
+                embed=discord.Embed(
+                    title="Error", description="No valid commands provided. Aborting.", color=self.bot.error_color
+                )
+            )
 
         # Expand subcommands
         final_commands = set()
@@ -1504,10 +1527,15 @@ class Utility(commands.Cog):
         for cmd in found_commands:
             add_command_recursive(cmd)
 
-        await ctx.send(
-            f"Found {len(final_commands)} commands (including subcommands).\n"
-            "What permission level should these commands be set to? (e.g. `Owner`, `Admin`, `Moderator`, `Supporter`, `User`)"
+        embed = discord.Embed(
+            title="Select Permission Level",
+            description=(
+                f"Found {len(final_commands)} commands (including subcommands).\n"
+                "What permission level should these commands be set to? (e.g. `Owner`, `Admin`, `Moderator`, `Supporter`, `User`)"
+            ),
+            color=self.bot.main_color,
         )
+        await ctx.send(embed=embed)
 
         try:
             msg = await self.bot.wait_for(
@@ -1515,13 +1543,20 @@ class Utility(commands.Cog):
                 check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
                 timeout=60.0,
             )
+
         except asyncio.TimeoutError:
-            return await ctx.send("Timed out.")
+            return await ctx.send(embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color))
 
         level_name = msg.content
         level = self._parse_level(level_name)
         if level == PermissionLevel.INVALID:
-            return await ctx.send(f"Invalid permission level: `{level_name}`. Aborting.")
+            return await ctx.send(
+                embed=discord.Embed(
+                    title="Error",
+                    description=f"Invalid permission level: `{level_name}`. Aborting.",
+                    color=self.bot.error_color,
+                )
+            )
 
         # Confirmation
         command_list_str = ", ".join(
@@ -1549,10 +1584,20 @@ class Utility(commands.Cog):
                 timeout=30.0,
             )
         except asyncio.TimeoutError:
-            return await ctx.send("Timed out. No changes applied.")
+            return await ctx.send(
+                embed=discord.Embed(
+                    title="Error", description="Timed out. No changes applied.", color=self.bot.error_color
+                )
+            )
 
         if msg.content.lower() == "cancel":
-            return await ctx.send("Aborted.")
+            return await ctx.send(
+                embed=discord.Embed(
+                    title="Operation Aborted",
+                    description="No changes have been applied.",
+                    color=self.bot.error_color,
+                )
+            )
 
         # Apply changes
         count = 0
@@ -1562,7 +1607,13 @@ class Utility(commands.Cog):
 
         await self.bot.config.update()
 
-        await ctx.send(f"Successfully updated permissions for {count} commands.")
+        await ctx.send(
+            embed=discord.Embed(
+                title="Success",
+                description=f"Successfully updated permissions for {count} commands.",
+                color=self.bot.main_color,
+            )
+        )
 
     @permissions.command(name="add", usage="[command/level] [name] [user/role]")
     @checks.has_permissions(PermissionLevel.OWNER)
