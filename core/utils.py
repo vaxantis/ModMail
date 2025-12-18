@@ -693,10 +693,6 @@ def extract_forwarded_content(message) -> typing.Optional[str]:
                     if len(snap.attachments) > 3:
                         attachment_info += f" (+{len(snap.attachments) - 3} more)"
                     formatted_part += f"[Attachments: {attachment_info}]\n"
-
-                # Add source link to the container message since snapshot doesn't have its own public link
-                formatted_part += f"\n**Source:** {message.jump_url}"
-
                 forwarded_parts.append(formatted_part)
 
             if forwarded_parts:
