@@ -13,17 +13,20 @@ however, insignificant breaking changes do not guarantee a major version bump, s
 - Bot events when threads is snoozed/unsnoozed [#3412](https://github.com/modmail-dev/Modmail/pull/3412)
 - Check for threadmenu and advancedmenu being enabled concurrently. [#3411](https://github.com/modmail-dev/Modmail/pull/3411)
 - Check for git installation before attempting autoupdate or update command. [#3406](https://github.com/modmail-dev/Modmail/pull/3406)
+- Arguments in responses, similar to snippets, but can be used anywhere. [#3418](https://github.com/modmail-dev/Modmail/pull/3418)
 
-### Changed 
+### Changed
 - Updated details on v4.2.1 changelog to better explain changes [#3409](https://github.com/modmail-dev/Modmail/pull/3409)
 - Updated plugin registry [#3409](https://github.com/modmail-dev/Modmail/pull/3409)
 - Updated bot dependencies to reflect more current versions. [#3412](https://github.com/modmail-dev/Modmail/pull/3412)
+- Permissions override now allows override of commands in bulk. `?perms override bulk` [#3417](https://github.com/modmail-dev/Modmail/pull/3417)
 
 ### Fixed
 - Forwarded messages now show when using logviewer. [#3414](https://github.com/modmail-dev/Modmail/pull/3414)
 - Submenu options now work when using built-in threadmenu. [#3404](https://github.com/modmail-dev/Modmail/pull/3404)
 - Missing `@` and incorrect link in plugin help command. [#3322](https://github.com/modmail-dev/Modmail/pull/3322)
 - Fixed typo in config help for `thread_close_response` and `thread_self_close_response` [#3407](https://github.com/modmail-dev/Modmail/pull/3407)
+- Added ability to delete and edit plain replies. [#3416](https://github.com/modmail-dev/Modmail/pull/3416)
 
 
 # v4.2.1
