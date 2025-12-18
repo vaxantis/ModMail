@@ -1441,12 +1441,13 @@ class Utility(commands.Cog):
         return await ctx.send(embed=embed)
 
     async def _bulk_override_flow(self, ctx):
+        message = None
         embed = discord.Embed(
             title="Bulk Override",
             description=(
                 "Please list the commands you want to override. "
                 "You can list multiple commands separated by spaces or newlines.\n"
-                "Example: `reply, block, unblock`."
+                "Example: `reply, block, unblock`.\n"
             ),
             color=self.bot.main_color,
         )
@@ -1470,6 +1471,7 @@ class Utility(commands.Cog):
 
         if self.bot.prefix:
             # Strip prefix from commands if present
+            # Note: This does not account for mention prefixes.
             raw_commands = [
                 c[len(self.bot.prefix) :] if c.startswith(self.bot.prefix) else c for c in raw_commands
             ]
@@ -1488,27 +1490,24 @@ class Utility(commands.Cog):
             embed = discord.Embed(
                 title="Invalid Commands Found",
                 description=f"The following commands were not found:\n`{', '.join(invalid_commands)}`\n\n"
-                "Do you want to continue with the valid commands? (y/n)",
+                "Do you want to continue with the valid commands?",
                 color=self.bot.error_color,
             )
-            await ctx.send(embed=embed)
-            try:
-                msg = await self.bot.wait_for(
-                    "message",
-                    check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                    timeout=60.0,
-                )
-                if msg.content.lower() not in ("y", "yes"):
-                    return await ctx.send(
-                        embed=discord.Embed(
-                            title="Operation Aborted",
-                            description="No changes have been applied.",
-                            color=self.bot.error_color,
-                        )
-                    )
-            except asyncio.TimeoutError:
-                return await ctx.send(
-                    embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color)
+            view = discord.ui.View()
+            view.add_item(utils.AcceptButton(custom_id="continue", emoji="✅"))
+            view.add_item(utils.DenyButton(custom_id="abort", emoji="❌"))
+
+            message = await ctx.send(embed=embed, view=view)
+            await view.wait()
+
+            if not view.value:
+                return await message.edit(
+                    embed=discord.Embed(
+                        title="Operation Aborted",
+                        description="No changes have been applied.",
+                        color=self.bot.error_color,
+                    ),
+                    view=None,
                 )
 
         if not found_commands:
@@ -1536,90 +1535,88 @@ class Utility(commands.Cog):
             title="Select Permission Level",
             description=(
                 f"Found {len(final_commands)} commands (including subcommands).\n"
-                "What permission level should these commands be set to? (e.g. `Owner`, `Admin`, `Moderator`, `Supporter`, `User`)"
+                "What permission level should these commands be set to?"
             ),
             color=self.bot.main_color,
         )
-        await ctx.send(embed=embed)
 
-        try:
-            msg = await self.bot.wait_for(
-                "message",
-                check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                timeout=60.0,
+        class LevelSelect(discord.ui.Select):
+            def __init__(self):
+                options = [
+                    discord.SelectOption(label="Owner", value="OWNER"),
+                    discord.SelectOption(label="Administrator", value="ADMINISTRATOR"),
+                    discord.SelectOption(label="Moderator", value="MODERATOR"),
+                    discord.SelectOption(label="Supporter", value="SUPPORTER"),
+                    discord.SelectOption(label="Regular", value="REGULAR"),
+                ]
+                super().__init__(placeholder="Select permission level...", options=options)
+
+            async def callback(self, interaction: discord.Interaction):
+                self.view.value = self.values[0]
+                self.view.stop()
+                await interaction.response.defer()
+
+        view = discord.ui.View()
+        view.add_item(LevelSelect())
+
+        if message:
+            await message.edit(embed=embed, view=view)
+        else:
+            message = await ctx.send(embed=embed, view=view)
+        await view.wait()
+
+        if view.value is None:
+            return await message.edit(
+                embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color),
+                view=None,
             )
 
-        except asyncio.TimeoutError:
-            return await ctx.send(
-                embed=discord.Embed(title="Error", description="Timed out.", color=self.bot.error_color)
-            )
-
-        level_name = msg.content
+        level_name = view.value
         level = self._parse_level(level_name)
-        if level == PermissionLevel.INVALID:
-            return await ctx.send(
-                embed=discord.Embed(
-                    title="Error",
-                    description=f"Invalid permission level: `{level_name}`. Aborting.",
-                    color=self.bot.error_color,
-                )
-            )
 
         # Confirmation
         command_list_str = ", ".join(
             f"`{c.qualified_name}`" for c in sorted(final_commands, key=lambda x: x.qualified_name)
         )
 
-        # Truncate if too long for embed description
-        if len(command_list_str) > 2000:
-            command_list_str = command_list_str[:1997] + "..."
+        command_list_str = utils.return_or_truncate(command_list_str, 2048)
 
         embed = discord.Embed(
             title="Confirm Bulk Override",
-            description=f"**Level:** {level.name}\n\n**Commands:**\n{command_list_str}\n\n"
-            "Type `confirm` to apply these changes or `cancel` to abort.",
+            description=f"**Level:** {level.name}\n\n**Commands:**\n{command_list_str}",
             color=self.bot.main_color,
         )
-        await ctx.send(embed=embed)
 
-        try:
-            msg = await self.bot.wait_for(
-                "message",
-                check=lambda m: m.author == ctx.author
-                and m.channel == ctx.channel
-                and m.content.lower() in ("confirm", "cancel"),
-                timeout=30.0,
-            )
-        except asyncio.TimeoutError:
-            return await ctx.send(
-                embed=discord.Embed(
-                    title="Error", description="Timed out. No changes applied.", color=self.bot.error_color
-                )
-            )
+        view = discord.ui.View()
+        view.add_item(utils.AcceptButton(custom_id="confirm", emoji="✅"))
+        view.add_item(utils.DenyButton(custom_id="cancel", emoji="❌"))
 
-        if msg.content.lower() == "cancel":
-            return await ctx.send(
+        await message.edit(embed=embed, view=view)
+        await view.wait()
+
+        if not view.value:
+            return await message.edit(
                 embed=discord.Embed(
                     title="Operation Aborted",
                     description="No changes have been applied.",
                     color=self.bot.error_color,
-                )
+                ),
+                view=None,
             )
 
         # Apply changes
-        count = 0
         for cmd in final_commands:
             self.bot.config["override_command_level"][cmd.qualified_name] = level.name
-            count += 1
 
         await self.bot.config.update()
 
-        await ctx.send(
+        await message.edit(
             embed=discord.Embed(
                 title="Success",
-                description=f"Successfully updated permissions for {count} commands.",
+                description=f"Successfully updated permissions for {len(final_commands)} commands.",
                 color=self.bot.main_color,
-            )
+            ),
+            view=None,
         )
 
     @permissions.command(name="add", usage="[command/level] [name] [user/role]")
