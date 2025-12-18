@@ -1469,12 +1469,17 @@ class Utility(commands.Cog):
         # Filter empty strings from split
         raw_commands = [c for c in raw_commands if c.strip()]
 
+        # Strip prefix from commands if present
+        prefixes = [self.bot.prefix, f"<@{self.bot.user.id}>", f"<@!{self.bot.user.id}>"]
         if self.bot.prefix:
-            # Strip prefix from commands if present
-            # Note: This does not account for mention prefixes.
-            raw_commands = [
-                c[len(self.bot.prefix) :] if c.startswith(self.bot.prefix) else c for c in raw_commands
-            ]
+            for i, cmd in enumerate(raw_commands):
+                for p in prefixes:
+                    if cmd.startswith(p):
+                        raw_commands[i] = cmd[len(p) :]
+                        break
+
+        # Filter empty strings again after stripping prefixes
+        raw_commands = [c for c in raw_commands if c.strip()]
 
         found_commands = []
         invalid_commands = []
@@ -1487,10 +1492,17 @@ class Utility(commands.Cog):
                 invalid_commands.append(cmd_name)
 
         if invalid_commands:
+            description = f"The following commands were not found:\n`{', '.join(invalid_commands)}`\n\n"
+            if found_commands:
+                found_list = ", ".join(c.qualified_name for c in found_commands)
+                found_list = utils.return_or_truncate(found_list, 1000)
+                description += f"The following commands **were** found:\n`{found_list}`\n\n"
+
+            description += "Do you want to continue with the valid commands?"
+
             embed = discord.Embed(
                 title="Invalid Commands Found",
-                description=f"The following commands were not found:\n`{', '.join(invalid_commands)}`\n\n"
-                "Do you want to continue with the valid commands?",
+                description=description,
                 color=self.bot.error_color,
             )
             view = discord.ui.View()
