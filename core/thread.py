@@ -1378,7 +1378,6 @@ class Thread:
             return message1, None
 
         if not note and is_note:
-            logger.warning("Message is an internal message, but note deletion/edit not requested.")
             raise ValueError("Thread message is an internal message, not a note.")
 
         if is_note:
@@ -1393,9 +1392,6 @@ class Thread:
             # Relaxed mod_color check: only ensure author is bot and has url (which implies it's a relay)
             # We rely on author.url existing for Joint ID
             if not (message1.embeds and message1.embeds[0].author.url and message1.author == self.bot.user):
-                logger.warning(
-                    f"Message {message1.id} is not a valid modmail relay message. embeds={bool(message1.embeds)}, author={message1.author}"
-                )
                 raise ValueError("Thread message not found.")
 
             try:
