@@ -35,6 +35,7 @@ from core.utils import (
     ConfirmThreadCreationView,
     DummyParam,
     extract_forwarded_content,
+    extract_forwarded_attachments,
 )
 
 logger = getLogger(__name__)
@@ -1950,6 +1951,11 @@ class Thread:
             embed.color = 0x5865F2  # Discord blurple for system messages
 
         ext = [(a.url, a.filename, False) for a in message.attachments]
+        
+        # Add forwarded message attachments
+        forwarded_attachments = extract_forwarded_attachments(message)
+        for url, filename in forwarded_attachments:
+            ext.append((url, filename, False))
 
         images = []
         attachments = []

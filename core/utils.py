@@ -46,6 +46,7 @@ __all__ = [
     "ConfirmThreadCreationView",
     "DummyParam",
     "extract_forwarded_content",
+    "extract_forwarded_attachments",
 ]
 
 
@@ -640,6 +641,36 @@ class ConfirmThreadCreationView(discord.ui.View):
         self.value = None
 
 
+def extract_forwarded_attachments(message) -> typing.List[typing.Tuple[str, str]]:
+    """
+    Extract attachment URLs from forwarded messages.
+
+    Parameters
+    ----------
+    message : discord.Message
+        The message to extract attachments from.
+
+    Returns
+    -------
+    List[Tuple[str, str]]
+        List of (url, filename) tuples for attachments.
+    """
+    import discord
+    attachments = []
+    try:
+        if getattr(message, "message_snapshots", None):
+            for snap in message.message_snapshots:
+                if getattr(snap, "attachments", None):
+                    for a in snap.attachments:
+                        url = getattr(a, "url", None)
+                        filename = getattr(a, "filename", "Unknown")
+                        if url:
+                            attachments.append((url.split('?')[0], filename))
+    except Exception:
+        pass
+    return attachments
+
+
 def extract_forwarded_content(message) -> typing.Optional[str]:
     """
     Extract forwarded message content from Discord forwarded messages.
@@ -687,12 +718,18 @@ def extract_forwarded_content(message) -> typing.Optional[str]:
                             break  # One embed preview is usually enough
 
                 if getattr(snap, "attachments", None):
-                    attachment_info = ", ".join(
-                        [getattr(a, "filename", "Unknown") for a in snap.attachments[:3]]
-                    )
+                    attachment_links = []
+                    for a in snap.attachments[:3]:
+                        filename = getattr(a, "filename", "Unknown")
+                        url = getattr(a, "url", None)
+                        if url:
+                            url = url.split('?')[0]
+                            attachment_links.append(f"[{filename}]({url})")
+                        else:
+                            attachment_links.append(filename)
                     if len(snap.attachments) > 3:
-                        attachment_info += f" (+{len(snap.attachments) - 3} more)"
-                    formatted_part += f"[Attachments: {attachment_info}]\n"
+                        attachment_links.append(f"(+{len(snap.attachments) - 3} more)")
+                    formatted_part += f"📎 {', '.join(attachment_links)}\n"
                 forwarded_parts.append(formatted_part)
 
             if forwarded_parts:
@@ -725,12 +762,18 @@ def extract_forwarded_content(message) -> typing.Optional[str]:
                                         embed_desc = embed_desc[:297] + "..."
                                     return f"**{ref_author_name}:** {embed_desc}"
                         elif getattr(ref_msg, "attachments", None):
-                            attachment_info = ", ".join(
-                                [getattr(a, "filename", "Unknown") for a in ref_msg.attachments[:3]]
-                            )
+                            attachment_links = []
+                            for a in ref_msg.attachments[:3]:
+                                filename = getattr(a, "filename", "Unknown")
+                                url = getattr(a, "url", None)
+                                if url:
+                                    url = url.split('?')[0]
+                                    attachment_links.append(f"[{filename}]({url})")
+                                else:
+                                    attachment_links.append(filename)
                             if len(ref_msg.attachments) > 3:
-                                attachment_info += f" (+{len(ref_msg.attachments) - 3} more)"
-                            return f"**{ref_author_name}:** [Attachments: {attachment_info}]"
+                                attachment_links.append(f"(+{len(ref_msg.attachments) - 3} more)")
+                            return f"**{ref_author_name}:** 📎 {', '.join(attachment_links)}"
                 except Exception as e:
                     # Log and continue; failing to extract a reference preview shouldn't break flow
                     logger.debug("Failed to extract reference preview: %s", e)
