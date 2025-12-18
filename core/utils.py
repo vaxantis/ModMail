@@ -656,6 +656,7 @@ def extract_forwarded_attachments(message) -> typing.List[typing.Tuple[str, str]
         List of (url, filename) tuples for attachments.
     """
     import discord
+
     attachments = []
     try:
         if getattr(message, "message_snapshots", None):
@@ -665,7 +666,7 @@ def extract_forwarded_attachments(message) -> typing.List[typing.Tuple[str, str]
                         url = getattr(a, "url", None)
                         filename = getattr(a, "filename", "Unknown")
                         if url:
-                            attachments.append((url.split('?')[0], filename))
+                            attachments.append((url.split("?")[0], filename))
     except Exception:
         pass
     return attachments
@@ -723,7 +724,7 @@ def extract_forwarded_content(message) -> typing.Optional[str]:
                         filename = getattr(a, "filename", "Unknown")
                         url = getattr(a, "url", None)
                         if url:
-                            url = url.split('?')[0]
+                            url = url.split("?")[0]
                             attachment_links.append(f"[{filename}]({url})")
                         else:
                             attachment_links.append(filename)
@@ -767,7 +768,7 @@ def extract_forwarded_content(message) -> typing.Optional[str]:
                                 filename = getattr(a, "filename", "Unknown")
                                 url = getattr(a, "url", None)
                                 if url:
-                                    url = url.split('?')[0]
+                                    url = url.split("?")[0]
                                     attachment_links.append(f"[{filename}]({url})")
                                 else:
                                     attachment_links.append(filename)
