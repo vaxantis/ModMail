@@ -224,16 +224,12 @@ class Thread:
                     "author_name": (
                         getattr(m.embeds[0].author, "name", "").split(" (")[0]
                         if m.embeds and m.embeds[0].author and m.author == self.bot.user
-                        else getattr(m.author, "name", None)
-                        if m.author != self.bot.user
-                        else None
+                        else getattr(m.author, "name", None) if m.author != self.bot.user else None
                     ),
                     "author_avatar": (
                         getattr(m.embeds[0].author, "icon_url", None)
                         if m.embeds and m.embeds[0].author and m.author == self.bot.user
-                        else m.author.display_avatar.url
-                        if m.author != self.bot.user
-                        else None
+                        else m.author.display_avatar.url if m.author != self.bot.user else None
                     ),
                 }
                 async for m in channel.history(limit=None, oldest_first=True)
@@ -1950,11 +1946,16 @@ class Thread:
 
         images = []
         attachments = []
-        for attachment in ext:
+        files_to_upload = []
+        for i, a in enumerate(message.attachments):
+            attachment = ext[i]
             if is_image_url(attachment[0]):
                 images.append(attachment)
             else:
-                attachments.append(attachment)
+                if hasattr(a, "to_file") and callable(a.to_file):
+                    files_to_upload.append(a)
+                else:
+                    attachments.append(attachment)
 
         image_urls = re.findall(
             r"http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*(),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
@@ -2169,6 +2170,13 @@ class Thread:
         else:
             mentions = None
 
+        discord_files = []
+        for att in files_to_upload:
+            try:
+                discord_files.append(await att.to_file())
+            except Exception:
+                logger.warning("Failed to convert AttachmentWrapper to file.", exc_info=True)
+
         if plain:
             if from_mod and not isinstance(destination, discord.TextChannel):
                 # Plain to user (DM)
@@ -2180,12 +2188,13 @@ class Thread:
                 body = embed.description or ""
                 plain_message = f"{prefix}{embed.author.name}:** {body}"
 
-                files = []
+                files = discord_files[:]
                 for att in message.attachments:
-                    try:
-                        files.append(await att.to_file())
-                    except Exception:
-                        logger.warning("Failed to attach file in plain DM.", exc_info=True)
+                    if not (hasattr(att, "to_file") and callable(att.to_file)):
+                        try:
+                            files.append(await att.to_file())
+                        except Exception:
+                            logger.warning("Failed to attach file in plain DM.", exc_info=True)
 
                 msg = await destination.send(plain_message, files=files or None)
             else:
@@ -2193,10 +2202,14 @@ class Thread:
                 footer_text = embed.footer.text if embed.footer else ""
                 embed.set_footer(text=f"[PLAIN] {footer_text}".strip())
                 msg = await destination.send(mentions, embed=embed)
+                if discord_files:
+                    await destination.send(files=discord_files)
 
         else:
             try:
                 msg = await destination.send(mentions, embed=embed)
+                if discord_files:
+                    await destination.send(files=discord_files)
             except discord.NotFound:
                 if (
                     isinstance(destination, discord.TextChannel)
@@ -2207,6 +2220,8 @@ class Thread:
                     await self.restore_from_snooze()
                     destination = self.channel or destination
                     msg = await destination.send(mentions, embed=embed)
+                    if discord_files:
+                        await destination.send(files=discord_files)
                 else:
                     logger.warning("Channel not found during send.")
                     raise

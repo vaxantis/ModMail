@@ -1309,9 +1309,18 @@ class ModmailBot(commands.Bot):
         # Check if a snippet is being called.
         # This needs to be done before checking for aliases since
         # snippets can have multiple words.
+        snippet_invoked = False
         try:
             # Use removeprefix once PY3.9+
-            snippet_text = self.snippets[message.content[len(invoked_prefix) :]]
+            snippet_data = self.snippets[message.content[len(invoked_prefix) :]]
+            # Extract text from snippet (handle both old string format and new dict format)
+            if isinstance(snippet_data, str):
+                snippet_text = snippet_data
+            elif isinstance(snippet_data, dict):
+                snippet_text = snippet_data.get("text", "")
+            else:
+                snippet_text = None
+            snippet_invoked = True
         except KeyError:
             snippet_text = None
 
@@ -1327,9 +1336,43 @@ class ModmailBot(commands.Bot):
             for alias in aliases:
                 command = None
                 try:
-                    snippet_text = self.snippets[alias]
+                    snippet_data = self.snippets[alias]
+                    # Extract text from snippet (handle both old string format and new dict format)
+                    if isinstance(snippet_data, str):
+                        snippet_text = snippet_data
+                    elif isinstance(snippet_data, dict):
+                        snippet_text = snippet_data.get("text", "")
+                        # Download attachment if present
+                        if snippet_data.get("file_id"):
+                            try:
+                                import io
+
+                                file_data, metadata = await self.api.download_snippet_attachment(
+                                    snippet_data["file_id"]
+                                )
+
+                                class AttachmentWrapper:
+                                    def __init__(self, file_data, metadata):
+                                        self.file_data = file_data
+                                        self.id = 0
+                                        self.url = f"attachment://{metadata['filename']}"
+                                        self.filename = metadata["filename"]
+                                        self.size = metadata["length"]
+                                        self.width = None
+
+                                    async def to_file(self):
+                                        return discord.File(
+                                            io.BytesIO(self.file_data), filename=self.filename
+                                        )
+
+                                message.attachments = [AttachmentWrapper(file_data, metadata)]
+                            except Exception as e:
+                                logger.warning("Failed to download snippet attachment: %s", e)
+                    else:
+                        snippet_text = None
                 except KeyError:
                     command_invocation_text = alias
+                    snippet_text = None
                 else:
                     command = self._get_snippet_command()
                     command_invocation_text = f"{invoked_prefix}{command} {snippet_text}"
@@ -1346,11 +1389,38 @@ class ModmailBot(commands.Bot):
 
         if snippet_text is not None:
             # Process snippets
+            snippet_name = message.content[len(invoked_prefix) :]
+            snippet_data = self.snippets.get(snippet_name)
+            # Download attachment if present
+            if isinstance(snippet_data, dict) and snippet_data.get("file_id"):
+                try:
+                    import io
+
+                    file_data, metadata = await self.api.download_snippet_attachment(snippet_data["file_id"])
+
+                    # Create a list-like object that mimics message.attachments
+                    class AttachmentWrapper:
+                        def __init__(self, file_data, metadata):
+                            self.file_data = file_data
+                            self.id = 0
+                            self.url = f"attachment://{metadata['filename']}"
+                            self.filename = metadata["filename"]
+                            self.size = metadata["length"]
+                            self.width = None
+
+                        async def to_file(self):
+                            return discord.File(io.BytesIO(self.file_data), filename=self.filename)
+
+                    message.attachments = [AttachmentWrapper(file_data, metadata)]
+                except Exception as e:
+                    logger.warning("Failed to download snippet attachment: %s", e)
             ctx.command = self._get_snippet_command()
             reply_view = StringView(f"{invoked_prefix}{ctx.command} {snippet_text}")
             discord.utils.find(reply_view.skip_string, prefixes)
             ctx.invoked_with = reply_view.get_word().lower()
             ctx.view = reply_view
+            # Mark that a snippet was invoked so we can delete the command message
+            ctx.snippet_invoked = snippet_invoked
         else:
             ctx.command = self.all_commands.get(invoker)
             ctx.invoked_with = invoker
