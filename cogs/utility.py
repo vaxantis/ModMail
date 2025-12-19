@@ -873,6 +873,20 @@ class Utility(commands.Cog):
                 color=self.bot.main_color,
                 description=f"`{key}` had been reset to default.",
             )
+
+            # Cancel exsisting active closures from thread_auto_close due to being disabled.
+            if key == "thread_auto_close":
+                closures = self.bot.config["closures"]
+                for recipient_id, items in tuple(closures.items()):
+                    if items.get("auto_close", False) is True:
+                        self.bot.config["closures"].pop(recipient_id)
+                        await self.config.update()
+                        thread = await self.bot.threads.find(recipient_id=int(recipient_id))
+                        if thread:
+                            await thread.cancel_closure(all=True)
+                        else:
+                            self.bot.config["closures"].pop(recipient_id)
+                            await self.config.update()
         else:
             embed = discord.Embed(
                 title="Error",

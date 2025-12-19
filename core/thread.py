@@ -1811,6 +1811,8 @@ class Thread:
 
         if not note and from_mod:
             self.bot.loop.create_task(self._restart_close_timer())  # Start or restart thread auto close
+        elif not note and not from_mod:
+            await self.cancel_closure(all=True)
 
         if self.close_task is not None:
             # cancel closing if a thread message is sent.
