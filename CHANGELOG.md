@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 This project mostly adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html);
 however, insignificant breaking changes do not guarantee a major version bump, see the reasoning [here](https://github.com/modmail-dev/modmail/issues/319). If you're a plugin developer, note the "BREAKING" section.
 
-# v4.2.2
+# v4.3.0
 
 ### Added
 - Ability to rename snippets and aliases [#3383](https://github.com/modmail-dev/Modmail/pull/3412)
@@ -14,12 +14,16 @@ however, insignificant breaking changes do not guarantee a major version bump, s
 - Check for threadmenu and advancedmenu being enabled concurrently. [#3411](https://github.com/modmail-dev/Modmail/pull/3411)
 - Check for git installation before attempting autoupdate or update command. [#3406](https://github.com/modmail-dev/Modmail/pull/3406)
 - Arguments in responses, similar to snippets, but can be used anywhere. [#3418](https://github.com/modmail-dev/Modmail/pull/3418)
+- Check to see if bot is using Git repository for install before running update or autoupdate. [#3406](https://github.com/modmail-dev/Modmail/pull/3406)
+- Ability to add attachments directly to snippets via storing image in MongoDB. [#3421](https://github.com/modmail-dev/Modmail/pull/3421)
 
 ### Changed
 - Updated details on v4.2.1 changelog to better explain changes [#3409](https://github.com/modmail-dev/Modmail/pull/3409)
 - Updated plugin registry [#3409](https://github.com/modmail-dev/Modmail/pull/3409)
 - Updated bot dependencies to reflect more current versions. [#3412](https://github.com/modmail-dev/Modmail/pull/3412)
 - Permissions override now allows override of commands in bulk. `?perms override bulk` [#3417](https://github.com/modmail-dev/Modmail/pull/3417)
+- Better error messages when adding aliases. [#3422](https://github.com/modmail-dev/Modmail/pull/3422)
+- Prevention of users without OWNER permissions adding eval commands to aliases for security. [#3422](https://github.com/modmail-dev/Modmail/pull/3422)
 
 ### Fixed
 - Forwarded messages now show when using logviewer. [#3414](https://github.com/modmail-dev/Modmail/pull/3414)
@@ -27,6 +31,7 @@ however, insignificant breaking changes do not guarantee a major version bump, s
 - Missing `@` and incorrect link in plugin help command. [#3322](https://github.com/modmail-dev/Modmail/pull/3322)
 - Fixed typo in config help for `thread_close_response` and `thread_self_close_response` [#3407](https://github.com/modmail-dev/Modmail/pull/3407)
 - Added ability to delete and edit plain replies. [#3416](https://github.com/modmail-dev/Modmail/pull/3416)
+- Fixed a bug with the disabling of `thread_auto_close` when threads are open. [#3423](https://github.com/modmail-dev/Modmail/pull/3423)
 
 
 # v4.2.1
