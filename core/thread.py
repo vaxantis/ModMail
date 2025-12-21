@@ -145,6 +145,7 @@ class Thread:
     def cancelled(self, flag: bool):
         self._cancelled = flag
         if flag:
+            self._ready_event.set()
             for i in self.wait_tasks:
                 i.cancel()
 
@@ -1842,7 +1843,8 @@ class Thread:
             await self.wait_until_ready()
 
         if not from_mod and not note:
-            self.bot.loop.create_task(self.bot.api.append_log(message, channel_id=self.channel.id))
+            if self.channel:
+                self.bot.loop.create_task(self.bot.api.append_log(message, channel_id=self.channel.id))
 
         destination = destination or self.channel
 
@@ -2565,6 +2567,10 @@ class ThreadManager:
         # checks for existing thread in cache
         thread = self.cache.get(recipient.id)
         if thread:
+            # If there's a pending menu, return the existing thread to avoid creating duplicates
+            if getattr(thread, "_pending_menu", False):
+                logger.debug("Thread for %s has pending menu, returning existing thread.", recipient)
+                return thread
             try:
                 await thread.wait_until_ready()
             except asyncio.CancelledError:
