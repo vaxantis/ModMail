@@ -2573,8 +2573,8 @@ class ThreadManager:
                     label = f"{recipient} ({recipient.id})"
                 except Exception:
                     label = f"User ({getattr(recipient, 'id', 'unknown')})"
-                logger.warning("Thread for %s cancelled, abort creating.", label)
-                return thread
+                self.cache.pop(recipient.id, None)
+                thread = None
             else:
                 if thread.channel and self.bot.get_channel(thread.channel.id):
                     logger.warning("Found an existing thread for %s, abort creating.", recipient)
