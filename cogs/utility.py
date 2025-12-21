@@ -873,14 +873,33 @@ class Utility(commands.Cog):
                 color=self.bot.main_color,
                 description=f"`{key}` had been reset to default.",
             )
+
+            # Cancel exsisting active closures from thread_auto_close due to being disabled.
+            if key == "thread_auto_close":
+                closures = self.bot.config["closures"]
+                for recipient_id, items in tuple(closures.items()):
+                    if items.get("auto_close", False) is True:
+                        self.bot.config["closures"].pop(recipient_id)
+                        thread = await self.bot.threads.find(recipient_id=int(recipient_id))
+                        if thread:
+                            await thread.cancel_closure(all=True)
+                        else:
+                            self.bot.config["closures"].pop(recipient_id)
+                # Only update config once after processing all closures
+                await self.bot.config.update()
         else:
-            embed = discord.Embed(
-                title="Error",
-                color=self.bot.error_color,
-                description=f"{key} is an invalid key.",
-            )
-            valid_keys = [f"`{k}`" for k in sorted(keys)]
-            embed.add_field(name="Valid keys", value=", ".join(valid_keys))
+            embeds = []
+            for names in zip_longest(*(iter(sorted(keys)),) * 15):
+                description = "\n".join(f"`{name}`" for name in takewhile(lambda x: x is not None, names))
+                embed = discord.Embed(
+                    title="Error - Invalid Key",
+                    color=self.bot.error_color,
+                    description=f"`{key}` is an invalid key.\n\n**Valid configuration keys:**\n{description}",
+                )
+                embeds.append(embed)
+
+            session = EmbedPaginatorSession(ctx, *embeds)
+            return await session.run()
 
         return await ctx.send(embed=embed)
 
@@ -1129,7 +1148,7 @@ class Utility(commands.Cog):
 
         return await ctx.send(embed=embed)
 
-    async def make_alias(self, name, value, action):
+    async def make_alias(self, name, value, action, ctx):
         values = utils.parse_alias(value)
         if not values:
             embed = discord.Embed(
@@ -1176,16 +1195,23 @@ class Utility(commands.Cog):
                     if multiple_alias:
                         embed.description = (
                             "The command you are attempting to point "
-                            f"to does not exist: `{linked_command}`."
+                            f"to on step {i} does not exist: `{linked_command}`."
                         )
                     else:
                         embed.description = (
                             "The command you are attempting to point "
-                            f"to on step {i} does not exist: `{linked_command}`."
+                            f"to does not exist: `{linked_command}`."
                         )
 
                     return embed
             else:
+                if linked_command == "eval" and not await checks.check_permissions(ctx, "eval"):
+                    embed = discord.Embed(
+                        title="Error",
+                        description="You can only add the `eval` command to an alias if you have permissions for that command.",
+                        color=self.bot.error_color,
+                    )
+                    return embed
                 save_aliases.append(val)
             if multiple_alias:
                 embed.add_field(name=f"Step {i}:", value=utils.truncate(val, 1024))
@@ -1240,7 +1266,7 @@ class Utility(commands.Cog):
             )
 
         if embed is None:
-            embed = await self.make_alias(name, value, "Added")
+            embed = await self.make_alias(name, value, "Added", ctx)
         return await ctx.send(embed=embed)
 
     @alias.command(name="remove", aliases=["del", "delete"])
@@ -1272,7 +1298,7 @@ class Utility(commands.Cog):
             embed = utils.create_not_found_embed(name, self.bot.aliases.keys(), "Alias")
             return await ctx.send(embed=embed)
 
-        embed = await self.make_alias(name, value, "Edited")
+        embed = await self.make_alias(name, value, "Edited", ctx)
         return await ctx.send(embed=embed)
 
     @alias.command(name="rename")
