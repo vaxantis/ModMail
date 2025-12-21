@@ -145,6 +145,7 @@ class Thread:
     def cancelled(self, flag: bool):
         self._cancelled = flag
         if flag:
+            self._ready_event.set()
             for i in self.wait_tasks:
                 i.cancel()
 
@@ -1781,6 +1782,13 @@ class Thread:
             reply commands to avoid mutating the original message object.
         """
         # Handle notes with Discord-like system message format - return early
+        if message is None:
+            # Safeguard against None messages (e.g. from menu interactions without a source message)
+            if not note and not from_mod and not thread_creation:
+                # If we're just trying to log/relay a user message and there is none, existing behavior
+                # suggests we might skip or error. Logging a warning and returning is safer than crashing.
+                return
+
         if note:
             destination = destination or self.channel
             content = message.content or "[No content]"
@@ -1835,7 +1843,8 @@ class Thread:
             await self.wait_until_ready()
 
         if not from_mod and not note:
-            self.bot.loop.create_task(self.bot.api.append_log(message, channel_id=self.channel.id))
+            if self.channel:
+                self.bot.loop.create_task(self.bot.api.append_log(message, channel_id=self.channel.id))
 
         destination = destination or self.channel
 
@@ -2558,6 +2567,10 @@ class ThreadManager:
         # checks for existing thread in cache
         thread = self.cache.get(recipient.id)
         if thread:
+            # If there's a pending menu, return the existing thread to avoid creating duplicates
+            if getattr(thread, "_pending_menu", False):
+                logger.debug("Thread for %s has pending menu, returning existing thread.", recipient)
+                return thread
             try:
                 await thread.wait_until_ready()
             except asyncio.CancelledError:
@@ -2566,8 +2579,8 @@ class ThreadManager:
                     label = f"{recipient} ({recipient.id})"
                 except Exception:
                     label = f"User ({getattr(recipient, 'id', 'unknown')})"
-                logger.warning("Thread for %s cancelled, abort creating.", label)
-                return thread
+                self.cache.pop(recipient.id, None)
+                thread = None
             else:
                 if thread.channel and self.bot.get_channel(thread.channel.id):
                     logger.warning("Found an existing thread for %s, abort creating.", recipient)
@@ -2915,35 +2928,36 @@ class ThreadManager:
                             setattr(self.outer_thread, "_pending_menu", False)
                             return
                         # Forward the user's initial DM to the thread channel
-                        try:
-                            await self.outer_thread.send(message)
-                        except Exception:
-                            logger.error(
-                                "Failed to relay initial message after menu selection",
-                                exc_info=True,
-                            )
-                        else:
-                            # React to the user's DM with the 'sent' emoji
+                        if message:
                             try:
-                                (
-                                    sent_emoji,
-                                    _,
-                                ) = await self.outer_thread.bot.retrieve_emoji()
-                                await self.outer_thread.bot.add_reaction(message, sent_emoji)
-                            except Exception as e:
-                                logger.debug(
-                                    "Failed to add sent reaction to user's DM: %s",
-                                    e,
+                                await self.outer_thread.send(message)
+                            except Exception:
+                                logger.error(
+                                    "Failed to relay initial message after menu selection",
+                                    exc_info=True,
                                 )
-                            # Dispatch thread_reply event for parity
-                            self.outer_thread.bot.dispatch(
-                                "thread_reply",
-                                self.outer_thread,
-                                False,
-                                message,
-                                False,
-                                False,
-                            )
+                            else:
+                                # React to the user's DM with the 'sent' emoji
+                                try:
+                                    (
+                                        sent_emoji,
+                                        _,
+                                    ) = await self.outer_thread.bot.retrieve_emoji()
+                                    await self.outer_thread.bot.add_reaction(message, sent_emoji)
+                                except Exception as e:
+                                    logger.debug(
+                                        "Failed to add sent reaction to user's DM: %s",
+                                        e,
+                                    )
+                                # Dispatch thread_reply event for parity
+                                self.outer_thread.bot.dispatch(
+                                    "thread_reply",
+                                    self.outer_thread,
+                                    False,
+                                    message,
+                                    False,
+                                    False,
+                                )
                         # Clear pending flag
                         setattr(self.outer_thread, "_pending_menu", False)
                     except Exception:
@@ -2964,7 +2978,34 @@ class ThreadManager:
                                 # Create a synthetic message object that makes the bot appear
                                 # as the author for menu-invoked command replies so the user
                                 # selecting the option is not shown as a "mod" sender.
-                                synthetic = DummyMessage(copy.copy(message))
+                                if message:
+                                    synthetic = DummyMessage(copy.copy(message))
+                                else:
+                                    # Fallback if no message exists (e.g. self-created thread via menu)
+                                    # We use the interaction's message or construct a minimal dummy
+                                    base_msg = getattr(interaction, "message", None) or self.menu_msg
+                                    synthetic = (
+                                        DummyMessage(copy.copy(base_msg)) if base_msg else DummyMessage(None)
+                                    )
+                                    # Ensure minimal attributes for Context if still missing (DummyMessage handles some, but we need more for commands)
+                                    if not synthetic._message:
+                                        # Identify a valid channel
+                                        ch = self.outer_thread.channel
+                                        if not ch:
+                                            # If channel isn't ready, we can't really invoke a command in it.
+                                            continue
+
+                                        from unittest.mock import MagicMock
+
+                                        # Create a mock message strictly for command invocation context
+                                        mock_msg = MagicMock(spec=discord.Message)
+                                        mock_msg.id = 0
+                                        mock_msg.channel = ch
+                                        mock_msg.guild = self.outer_thread.bot.modmail_guild
+                                        mock_msg.content = self.outer_thread.bot.prefix + al
+                                        mock_msg.author = self.outer_thread.bot.user
+                                        synthetic = DummyMessage(mock_msg)
+
                                 try:
                                     synthetic.author = (
                                         self.outer_thread.bot.modmail_guild.me or self.outer_thread.bot.user
