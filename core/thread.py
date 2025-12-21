@@ -225,16 +225,12 @@ class Thread:
                     "author_name": (
                         getattr(m.embeds[0].author, "name", "").split(" (")[0]
                         if m.embeds and m.embeds[0].author and m.author == self.bot.user
-                        else getattr(m.author, "name", None)
-                        if m.author != self.bot.user
-                        else None
+                        else getattr(m.author, "name", None) if m.author != self.bot.user else None
                     ),
                     "author_avatar": (
                         getattr(m.embeds[0].author, "icon_url", None)
                         if m.embeds and m.embeds[0].author and m.author == self.bot.user
-                        else m.author.display_avatar.url
-                        if m.author != self.bot.user
-                        else None
+                        else m.author.display_avatar.url if m.author != self.bot.user else None
                     ),
                 }
                 async for m in channel.history(limit=None, oldest_first=True)
@@ -1754,13 +1750,7 @@ class Thread:
         destination: typing.Union[
             discord.TextChannel, discord.DMChannel, discord.User, discord.Member
         ] = None,
-        if message is None:
-            # Safeguard against None messages (e.g. from menu interactions without a source message)
-            if not note and not from_mod and not thread_creation:
-                # If we're just trying to log/relay a user message and there is none, existing behavior
-                # suggests we might skip or error. Logging a warning and returning is safer than crashing.
-                return
-
+        from_mod: bool = False,
         note: bool = False,
         anonymous: bool = False,
         plain: bool = False,
@@ -1787,6 +1777,13 @@ class Thread:
             reply commands to avoid mutating the original message object.
         """
         # Handle notes with Discord-like system message format - return early
+        if message is None:
+            # Safeguard against None messages (e.g. from menu interactions without a source message)
+            if not note and not from_mod and not thread_creation:
+                # If we're just trying to log/relay a user message and there is none, existing behavior
+                # suggests we might skip or error. Logging a warning and returning is safer than crashing.
+                return
+
         if note:
             destination = destination or self.channel
             content = message.content or "[No content]"
@@ -2977,25 +2974,27 @@ class ThreadManager:
                                     # Fallback if no message exists (e.g. self-created thread via menu)
                                     # We use the interaction's message or construct a minimal dummy
                                     base_msg = getattr(interaction, "message", None) or self.menu_msg
-                                    synthetic = DummyMessage(copy.copy(base_msg)) if base_msg else DummyMessage(None)
+                                    synthetic = (
+                                        DummyMessage(copy.copy(base_msg)) if base_msg else DummyMessage(None)
+                                    )
                                     # Ensure minimal attributes for Context if still missing (DummyMessage handles some, but we need more for commands)
                                     if not synthetic._message:
-                                         # Identify a valid channel
+                                        # Identify a valid channel
                                         ch = self.outer_thread.channel
                                         if not ch:
                                             # If channel isn't ready, we can't really invoke a command in it.
                                             continue
-                                        
+
                                         from unittest.mock import MagicMock
+
                                         # Create a mock message strictly for command invocation context
                                         mock_msg = MagicMock(spec=discord.Message)
                                         mock_msg.id = 0
                                         mock_msg.channel = ch
                                         mock_msg.guild = self.outer_thread.bot.modmail_guild
                                         mock_msg.content = self.outer_thread.bot.prefix + al
-                                        mock_msg.author = self.outer_thread.bot.user 
+                                        mock_msg.author = self.outer_thread.bot.user
                                         synthetic = DummyMessage(mock_msg)
-
 
                                 try:
                                     synthetic.author = (

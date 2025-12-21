@@ -672,7 +672,9 @@ class MongoDBClient(ApiClient):
                     "id": str(message.author.id),
                     "name": message.author.name,
                     "discriminator": message.author.discriminator,
-                    "avatar_url": message.author.display_avatar.url if message.author.display_avatar else None,
+                    "avatar_url": (
+                        message.author.display_avatar.url if message.author.display_avatar else None
+                    ),
                     "mod": not isinstance(message.channel, DMChannel),
                 },
                 "content": message.content,
@@ -705,7 +707,6 @@ class MongoDBClient(ApiClient):
                 "type": type_,
                 "attachments": [],
             }
-
 
         return await self.logs.find_one_and_update(
             {"channel_id": channel_id},
