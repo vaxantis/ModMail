@@ -112,6 +112,30 @@ class Modmail(commands.Cog):
             return int(match.group(1))
         return None
 
+    def _get_snippet_text(self, snippet_data) -> str:
+        """
+        Extract text from a snippet, handling both old string format and new dict format.
+
+        Parameters
+        ----------
+        snippet_data : str or dict
+            The snippet data (either old string format or new dict format).
+
+        Returns
+        -------
+        str
+            The text content of the snippet.
+        """
+        if isinstance(snippet_data, str):
+            return snippet_data
+        elif isinstance(snippet_data, dict):
+            return snippet_data.get("text", "")
+        return ""
+
+    def _has_snippet_attachment(self, snippet_data) -> bool:
+        """Check if a snippet has an attachment."""
+        return isinstance(snippet_data, dict) and bool(snippet_data.get("file_id"))
+
     @commands.command()
     @trigger_typing
     @checks.has_permissions(PermissionLevel.OWNER)
@@ -246,10 +270,17 @@ class Modmail(commands.Cog):
             if snippet_name is None:
                 embed = create_not_found_embed(name, self.bot.snippets.keys(), "Snippet")
             else:
-                val = self.bot.snippets[snippet_name]
+                snippet_data = self.bot.snippets[snippet_name]
+                snippet_text = self._get_snippet_text(snippet_data)
+                has_attachment = self._has_snippet_attachment(snippet_data)
+
+                description = snippet_text if snippet_text else "(No text content)"
+                if has_attachment:
+                    description += "\n\n📎 *This snippet has an attachment.*"
+
                 embed = discord.Embed(
                     title=f'Snippet - "{snippet_name}":',
-                    description=val,
+                    description=description,
                     color=self.bot.main_color,
                 )
             return await ctx.send(embed=embed)
@@ -270,10 +301,15 @@ class Modmail(commands.Cog):
         for embed in embeds:
             embed.set_author(name="Snippets", icon_url=self.bot.get_guild_icon(guild=ctx.guild, size=128))
 
-        for i, snippet in enumerate(sorted(self.bot.snippets.items())):
-            embeds[i // 10].add_field(
-                name=snippet[0], value=return_or_truncate(snippet[1], 350), inline=False
-            )
+        for i, (snippet_name, snippet_data) in enumerate(sorted(self.bot.snippets.items())):
+            snippet_text = self._get_snippet_text(snippet_data)
+            has_attachment = self._has_snippet_attachment(snippet_data)
+
+            display_value = return_or_truncate(snippet_text, 350) if snippet_text else "(No text)"
+            if has_attachment:
+                display_value = "📎 " + display_value
+
+            embeds[i // 10].add_field(name=snippet_name, value=display_value, inline=False)
 
         session = EmbedPaginatorSession(ctx, *embeds)
         await session.run()
@@ -288,10 +324,18 @@ class Modmail(commands.Cog):
         if snippet_name is None:
             embed = create_not_found_embed(name, self.bot.snippets.keys(), "Snippet")
         else:
-            val = truncate(escape_code_block(self.bot.snippets[snippet_name]), 2048 - 7)
+            snippet_data = self.bot.snippets[snippet_name]
+            snippet_text = self._get_snippet_text(snippet_data)
+            has_attachment = self._has_snippet_attachment(snippet_data)
+
+            val = truncate(escape_code_block(snippet_text), 2048 - 7) if snippet_text else "(No text content)"
+            description = f"```\n{val}```"
+            if has_attachment:
+                description += "\n\n📎 *This snippet has an attachment.*"
+
             embed = discord.Embed(
                 title=f'Raw snippet - "{snippet_name}":',
-                description=f"```\n{val}```",
+                description=description,
                 color=self.bot.main_color,
             )
 
@@ -299,9 +343,9 @@ class Modmail(commands.Cog):
 
     @snippet.command(name="add", aliases=["create", "make"])
     @checks.has_permissions(PermissionLevel.SUPPORTER)
-    async def snippet_add(self, ctx, name: str.lower, *, value: commands.clean_content):
+    async def snippet_add(self, ctx, name: str.lower, *, value: commands.clean_content = None):
         """
-        Add a snippet.
+        Add a snippet with an optional attachment.
 
         Simply to add a snippet, do: ```
         {prefix}snippet add hey hello there :)
@@ -311,6 +355,8 @@ class Modmail(commands.Cog):
         To add a multi-word snippet name, use quotes: ```
         {prefix}snippet add "two word" this is a two word snippet.
         ```
+
+        You can also attach a file (max 10 MB) to include with the snippet.
         """
         if self.bot.get_command(name):
             embed = discord.Embed(
@@ -343,14 +389,122 @@ class Modmail(commands.Cog):
             )
             return await ctx.send(embed=embed)
 
-        self.bot.snippets[name] = value
+        # Handle optional attachment
+        file_id = None
+        attachment_info = None
+        if ctx.message.attachments:
+            attachment = ctx.message.attachments[0]
+
+            # Validate file size
+            max_size_mb = self.bot.config.get("snippet_attachment_max_size")
+            max_size_bytes = max_size_mb * 1024 * 1024
+            if attachment.size > max_size_bytes:
+                embed = discord.Embed(
+                    title="Error",
+                    color=self.bot.error_color,
+                    description=f"Attachment exceeds the maximum file size of {max_size_mb} MB. "
+                    f"Your file is {attachment.size / (1024 * 1024):.2f} MB.",
+                )
+                return await ctx.send(embed=embed)
+
+            # Confirmation for attachments 2MB or higher
+            confirm_msg = None
+            if attachment.size >= 2 * 1024 * 1024:
+                view = discord.ui.View(timeout=30)
+                confirmed = None
+
+                async def confirm_callback(interaction: discord.Interaction):
+                    nonlocal confirmed
+                    if interaction.user.id != ctx.author.id:
+                        return await interaction.response.send_message(
+                            "Only the command author can confirm.", ephemeral=True
+                        )
+                    confirmed = True
+                    await interaction.response.defer()
+                    view.stop()
+
+                async def cancel_callback(interaction: discord.Interaction):
+                    nonlocal confirmed
+                    if interaction.user.id != ctx.author.id:
+                        return await interaction.response.send_message(
+                            "Only the command author can cancel.", ephemeral=True
+                        )
+                    confirmed = False
+                    await interaction.response.edit_message(
+                        content="❌ Cancelled. Snippet not created.", view=None, embed=None
+                    )
+                    view.stop()
+
+                confirm_button = discord.ui.Button(label="✓ Confirm", style=discord.ButtonStyle.green)
+                cancel_button = discord.ui.Button(label="✗ Cancel", style=discord.ButtonStyle.red)
+                confirm_button.callback = confirm_callback
+                cancel_button.callback = cancel_callback
+                view.add_item(confirm_button)
+                view.add_item(cancel_button)
+
+                embed = discord.Embed(
+                    title="Confirm Large Attachment",
+                    description=f"The attachment is {attachment.size / (1024 * 1024):.2f} MB (≥2 MB).\n"
+                    f"Do you want to create the snippet `{name}` with this attachment?",
+                    color=self.bot.main_color,
+                )
+                confirm_msg = await ctx.send(embed=embed, view=view)
+                await view.wait()
+
+                if confirmed is None or not confirmed:
+                    if confirmed is None:
+                        await confirm_msg.edit(
+                            content="⏱️ Timed out. Snippet not created.", view=None, embed=None
+                        )
+                    return
+
+            # Download and upload to GridFS
+            try:
+                file_data = await attachment.read()
+                file_id = await self.bot.api.upload_snippet_attachment(
+                    file_data,
+                    attachment.filename,
+                    attachment.content_type or "application/octet-stream",
+                )
+                attachment_info = attachment.filename
+            except Exception as e:
+                logger.error("Failed to upload snippet attachment: %s", e)
+                embed = discord.Embed(
+                    title="Error",
+                    color=self.bot.error_color,
+                    description="Failed to upload attachment. Please try again.",
+                )
+                return await ctx.send(embed=embed)
+
+        # Require at least text or attachment
+        if not value and not file_id:
+            embed = discord.Embed(
+                title="Error",
+                color=self.bot.error_color,
+                description="You must provide either text content or an attachment for the snippet.",
+            )
+            return await ctx.send(embed=embed)
+
+        # Store snippet as dict with text and optional file_id
+        snippet_data = {"text": value or ""}
+        if file_id:
+            snippet_data["file_id"] = file_id
+
+        self.bot.snippets[name] = snippet_data
         await self.bot.config.update()
+
+        description = "Successfully created snippet."
+        if attachment_info:
+            description += f"\n📎 Attachment: `{attachment_info}`"
 
         embed = discord.Embed(
             title="Added snippet",
             color=self.bot.main_color,
-            description="Successfully created snippet.",
+            description=description,
         )
+
+        if confirm_msg:
+            return await confirm_msg.edit(content=None, embed=embed, view=None)
         return await ctx.send(embed=embed)
 
     def _fix_aliases(self, snippet_being_deleted: str) -> Tuple[List[str]]:
@@ -408,6 +562,14 @@ class Modmail(commands.Cog):
     async def snippet_remove(self, ctx, *, name: str.lower):
         """Remove a snippet."""
         if name in self.bot.snippets:
+            # Delete GridFS attachment if present
+            snippet_data = self.bot.snippets[name]
+            if isinstance(snippet_data, dict) and snippet_data.get("file_id"):
+                try:
+                    await self.bot.api.delete_snippet_attachment(snippet_data["file_id"])
+                except Exception as e:
+                    logger.warning("Failed to delete snippet attachment for %s: %s", name, e)
+
             deleted_aliases, edited_aliases = self._fix_aliases(name)
 
             deleted_aliases_string = ",".join(f"`{alias}`" for alias in deleted_aliases)
@@ -459,22 +621,103 @@ class Modmail(commands.Cog):
 
     @snippet.command(name="edit")
     @checks.has_permissions(PermissionLevel.SUPPORTER)
-    async def snippet_edit(self, ctx, name: str.lower, *, value):
+    async def snippet_edit(self, ctx, name: str.lower, *, value: commands.clean_content = None):
         """
-        Edit a snippet.
+        Edit a snippet's text and/or attachment.
 
         To edit a multi-word snippet name, use quotes: ```
         {prefix}snippet edit "two word" this is a new two word snippet.
         ```
+
+        Attach a new file to replace the existing attachment.
+        Provide text without attachment to keep the existing attachment.
         """
         if name in self.bot.snippets:
-            self.bot.snippets[name] = value
+            snippet_data = self.bot.snippets[name]
+
+            # Handle old string format
+            if isinstance(snippet_data, str):
+                old_text = snippet_data
+                old_file_id = None
+            else:
+                old_text = snippet_data.get("text", "")
+                old_file_id = snippet_data.get("file_id")
+
+            # Handle new attachment if provided
+            new_file_id = old_file_id
+            attachment_info = None
+            if ctx.message.attachments:
+                attachment = ctx.message.attachments[0]
+
+                # Validate file size
+                max_size_mb = self.bot.config.get("snippet_attachment_max_size")
+                max_size_bytes = max_size_mb * 1024 * 1024
+                if attachment.size > max_size_bytes:
+                    embed = discord.Embed(
+                        title="Error",
+                        color=self.bot.error_color,
+                        description=f"Attachment exceeds the maximum file size of {max_size_mb} MB. "
+                        f"Your file is {attachment.size / (1024 * 1024):.2f} MB.",
+                    )
+                    return await ctx.send(embed=embed)
+
+                # Delete old attachment if present
+                if old_file_id:
+                    try:
+                        await self.bot.api.delete_snippet_attachment(old_file_id)
+                    except Exception as e:
+                        logger.warning("Failed to delete old attachment for %s: %s", name, e)
+
+                # Upload new attachment
+                try:
+                    file_data = await attachment.read()
+                    new_file_id = await self.bot.api.upload_snippet_attachment(
+                        file_data,
+                        attachment.filename,
+                        attachment.content_type or "application/octet-stream",
+                    )
+                    attachment_info = attachment.filename
+                except Exception as e:
+                    logger.error("Failed to upload snippet attachment: %s", e)
+                    embed = discord.Embed(
+                        title="Error",
+                        color=self.bot.error_color,
+                        description="Failed to upload attachment. Please try again.",
+                    )
+                    return await ctx.send(embed=embed)
+
+            # Use new text if provided, otherwise keep old text
+            new_text = value if value is not None else old_text
+
+            # Require at least text or attachment
+            if not new_text and not new_file_id:
+                embed = discord.Embed(
+                    title="Error",
+                    color=self.bot.error_color,
+                    description="Snippet must have either text content or an attachment.",
+                )
+                return await ctx.send(embed=embed)
+
+            # Update snippet
+            updated_snippet = {"text": new_text or ""}
+            if new_file_id:
+                updated_snippet["file_id"] = new_file_id
+
+            self.bot.snippets[name] = updated_snippet
             await self.bot.config.update()
+
+            description = f"`{name}` has been updated."
+            if value:
+                description += f'\nText: "{truncate(value, 100)}"'
+            if attachment_info:
+                description += f"\n📎 New attachment: `{attachment_info}`"
+            elif new_file_id:
+                description += f"\n📎 Attachment kept."
 
             embed = discord.Embed(
                 title="Edited snippet",
                 color=self.bot.main_color,
-                description=f'`{name}` will now send "{value}".',
+                description=description,
             )
         else:
             embed = create_not_found_embed(name, self.bot.snippets.keys(), "Snippet")
@@ -1540,6 +1783,13 @@ class Modmail(commands.Cog):
         ctx.message.content = msg
         async with safe_typing(ctx):
             await ctx.thread.reply(ctx.message, msg)
+
+        # Delete the snippet command message if it was invoked via snippet
+        if getattr(ctx, "snippet_invoked", False):
+            try:
+                await ctx.message.delete()
+            except Exception as e:
+                logger.warning("Failed to delete snippet command message: %s", e)
 
     @commands.command(aliases=["formatanonreply"])
     @checks.has_permissions(PermissionLevel.SUPPORTER)

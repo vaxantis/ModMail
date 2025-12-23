@@ -164,6 +164,8 @@ class ConfigManager:
         "thread_creation_menu_embed_large_image": False,
         "thread_creation_menu_embed_footer_icon_url": None,
         "thread_creation_menu_embed_color": str(discord.Color.green()),
+        # snippet attachments
+        "snippet_attachment_max_size": 10,  # in MB
     }
 
     private_keys = {
@@ -241,6 +243,8 @@ class ConfigManager:
     }
 
     duration_seconds = {"snooze_default_duration"}
+
+    megabytes = {"snippet_attachment_max_size"}
 
     booleans = {
         "use_user_id_channel_name",
@@ -414,6 +418,14 @@ class ConfigManager:
                 value = self.remove(key)
 
         elif key in self.duration_seconds:
+            if not isinstance(value, int):
+                try:
+                    value = int(value)
+                except (ValueError, TypeError):
+                    logger.warning("Invalid %s %s.", key, value)
+                    value = self.remove(key)
+
+        elif key in self.megabytes:
             if not isinstance(value, int):
                 try:
                     value = int(value)

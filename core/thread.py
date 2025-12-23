@@ -1957,11 +1957,23 @@ class Thread:
 
         images = []
         attachments = []
-        for attachment in ext:
-            if is_image_url(attachment[0]):
+        files_to_upload = []
+
+        # List to track snippet images that should be uploaded but not listed as file attachments
+        snippet_images_to_upload = []
+
+        for i, a in enumerate(message.attachments):
+            attachment = ext[i]
+            if getattr(a, "is_snippet_image", False):
+                # If it's a snippet image, we want to embed it using attachment:// syntax
+                snippet_images_to_upload.append(a)
+            elif is_image_url(attachment[0]):
                 images.append(attachment)
             else:
-                attachments.append(attachment)
+                if hasattr(a, "to_file") and callable(a.to_file):
+                    files_to_upload.append(a)
+                else:
+                    attachments.append(attachment)
 
         image_urls = re.findall(
             r"http[s]?:\/\/(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*(),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
@@ -2031,6 +2043,15 @@ class Thread:
                 images.append((None, i.name, True))
 
         embedded_image = False
+
+        # Handle snippet images first (embedded directly)
+        for a in snippet_images_to_upload:
+            if not embedded_image:
+                embed.set_image(url=f"attachment://{a.filename}")
+                embed.add_field(name="Image", value=a.filename)
+                embedded_image = True
+            # Always add to files_to_upload so the attachment is physically present
+            files_to_upload.append(a)
 
         prioritize_uploads = any(i[1] is not None for i in images)
 
@@ -2176,6 +2197,13 @@ class Thread:
         else:
             mentions = None
 
+        discord_files = []
+        for att in files_to_upload:
+            try:
+                discord_files.append(await att.to_file())
+            except Exception:
+                logger.warning("Failed to convert AttachmentWrapper to file.", exc_info=True)
+
         if plain:
             if from_mod and not isinstance(destination, discord.TextChannel):
                 # Plain to user (DM)
@@ -2187,23 +2215,24 @@ class Thread:
                 body = embed.description or ""
                 plain_message = f"{prefix}{embed.author.name}:** {body}"
 
-                files = []
+                files = discord_files[:]
                 for att in message.attachments:
-                    try:
-                        files.append(await att.to_file())
-                    except Exception:
-                        logger.warning("Failed to attach file in plain DM.", exc_info=True)
+                    if not (hasattr(att, "to_file") and callable(att.to_file)):
+                        try:
+                            files.append(await att.to_file())
+                        except Exception:
+                            logger.warning("Failed to attach file in plain DM.", exc_info=True)
 
                 msg = await destination.send(plain_message, files=files or None)
             else:
                 # Plain to mods
                 footer_text = embed.footer.text if embed.footer else ""
                 embed.set_footer(text=f"[PLAIN] {footer_text}".strip())
-                msg = await destination.send(mentions, embed=embed)
+                msg = await destination.send(mentions, embed=embed, files=discord_files or None)
 
         else:
             try:
-                msg = await destination.send(mentions, embed=embed)
+                msg = await destination.send(mentions, embed=embed, files=discord_files or None)
             except discord.NotFound:
                 if (
                     isinstance(destination, discord.TextChannel)
@@ -2213,7 +2242,7 @@ class Thread:
                     logger.info("Thread channel missing while sending; attempting restore and resend.")
                     await self.restore_from_snooze()
                     destination = self.channel or destination
-                    msg = await destination.send(mentions, embed=embed)
+                    msg = await destination.send(mentions, embed=embed, files=discord_files or None)
                 else:
                     logger.warning("Channel not found during send.")
                     raise
