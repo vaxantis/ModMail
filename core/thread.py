@@ -1958,9 +1958,16 @@ class Thread:
         images = []
         attachments = []
         files_to_upload = []
+
+        # List to track snippet images that should be uploaded but not listed as file attachments
+        snippet_images_to_upload = []
+
         for i, a in enumerate(message.attachments):
             attachment = ext[i]
-            if is_image_url(attachment[0]):
+            if getattr(a, "is_snippet_image", False):
+                # If it's a snippet image, we want to embed it using attachment:// syntax
+                snippet_images_to_upload.append(a)
+            elif is_image_url(attachment[0]):
                 images.append(attachment)
             else:
                 if hasattr(a, "to_file") and callable(a.to_file):
@@ -2036,6 +2043,16 @@ class Thread:
                 images.append((None, i.name, True))
 
         embedded_image = False
+
+
+        # Handle snippet images first (embedded directly)
+        for a in snippet_images_to_upload:
+            if not embedded_image:
+                embed.set_image(url=f"attachment://{a.filename}")
+                embed.add_field(name="Image", value=a.filename)
+                embedded_image = True
+            # Always add to files_to_upload so the attachment is physically present
+            files_to_upload.append(a)
 
         prioritize_uploads = any(i[1] is not None for i in images)
 
@@ -2212,15 +2229,11 @@ class Thread:
                 # Plain to mods
                 footer_text = embed.footer.text if embed.footer else ""
                 embed.set_footer(text=f"[PLAIN] {footer_text}".strip())
-                msg = await destination.send(mentions, embed=embed)
-                if discord_files:
-                    await destination.send(files=discord_files)
+                msg = await destination.send(mentions, embed=embed, files=discord_files or None)
 
         else:
             try:
-                msg = await destination.send(mentions, embed=embed)
-                if discord_files:
-                    await destination.send(files=discord_files)
+                msg = await destination.send(mentions, embed=embed, files=discord_files or None)
             except discord.NotFound:
                 if (
                     isinstance(destination, discord.TextChannel)
@@ -2230,9 +2243,7 @@ class Thread:
                     logger.info("Thread channel missing while sending; attempting restore and resend.")
                     await self.restore_from_snooze()
                     destination = self.channel or destination
-                    msg = await destination.send(mentions, embed=embed)
-                    if discord_files:
-                        await destination.send(files=discord_files)
+                    msg = await destination.send(mentions, embed=embed, files=discord_files or None)
                 else:
                     logger.warning("Channel not found during send.")
                     raise

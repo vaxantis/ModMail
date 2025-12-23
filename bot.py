@@ -4,6 +4,7 @@ __version__ = "4.2.1"
 import asyncio
 import copy
 import hashlib
+import io
 import os
 import re
 import string
@@ -1345,27 +1346,32 @@ class ModmailBot(commands.Bot):
                         # Download attachment if present
                         if snippet_data.get("file_id"):
                             try:
-                                import io
-
                                 file_data, metadata = await self.api.download_snippet_attachment(
                                     snippet_data["file_id"]
                                 )
 
+                                # Check if the attachment is an image based on content type
+                                content_type = metadata.get("content_type", "")
+                                is_image = content_type.startswith("image/")
+
                                 class AttachmentWrapper:
-                                    def __init__(self, file_data, metadata):
+                                    def __init__(self, file_data, metadata, is_image):
                                         self.file_data = file_data
                                         self.id = 0
+                                        # Use attachment:// syntax for referencing in embed
                                         self.url = f"attachment://{metadata['filename']}"
                                         self.filename = metadata["filename"]
                                         self.size = metadata["length"]
                                         self.width = None
+                                        # Flag to identify snippet images for special handling in thread.py
+                                        self.is_snippet_image = is_image
 
                                     async def to_file(self):
                                         return discord.File(
                                             io.BytesIO(self.file_data), filename=self.filename
                                         )
 
-                                message.attachments = [AttachmentWrapper(file_data, metadata)]
+                                message.attachments = [AttachmentWrapper(file_data, metadata, is_image)]
                             except Exception as e:
                                 logger.warning("Failed to download snippet attachment: %s", e)
                     else:
@@ -1394,24 +1400,27 @@ class ModmailBot(commands.Bot):
             # Download attachment if present
             if isinstance(snippet_data, dict) and snippet_data.get("file_id"):
                 try:
-                    import io
-
                     file_data, metadata = await self.api.download_snippet_attachment(snippet_data["file_id"])
 
-                    # Create a list-like object that mimics message.attachments
+                    # Check if the attachment is an image based on content type
+                    content_type = metadata.get("content_type", "")
+                    is_image = content_type.startswith("image/")
+
                     class AttachmentWrapper:
-                        def __init__(self, file_data, metadata):
+                        def __init__(self, file_data, metadata, is_image):
                             self.file_data = file_data
                             self.id = 0
+                            # Use attachment:// syntax
                             self.url = f"attachment://{metadata['filename']}"
                             self.filename = metadata["filename"]
                             self.size = metadata["length"]
                             self.width = None
+                            self.is_snippet_image = is_image
 
                         async def to_file(self):
                             return discord.File(io.BytesIO(self.file_data), filename=self.filename)
 
-                    message.attachments = [AttachmentWrapper(file_data, metadata)]
+                    message.attachments = [AttachmentWrapper(file_data, metadata, is_image)]
                 except Exception as e:
                     logger.warning("Failed to download snippet attachment: %s", e)
             ctx.command = self._get_snippet_command()
