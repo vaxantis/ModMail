@@ -2044,7 +2044,6 @@ class Thread:
 
         embedded_image = False
 
-
         # Handle snippet images first (embedded directly)
         for a in snippet_images_to_upload:
             if not embedded_image:
