@@ -1297,7 +1297,9 @@ class Thread:
         existing = self.bot.config["closures"].get(closure_key)
         if existing is not None:
             existing_is_auto = bool(existing.get("auto_close", False))
-            should_remove = all or (auto_close and existing_is_auto) or ((not auto_close) and (not existing_is_auto))
+            should_remove = (
+                all or (auto_close and existing_is_auto) or ((not auto_close) and (not existing_is_auto))
+            )
             if should_remove:
                 self.bot.config["closures"].pop(closure_key, None)
                 await self.bot.config.update()
