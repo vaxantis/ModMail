@@ -145,6 +145,7 @@ class Thread:
     def cancelled(self, flag: bool):
         self._cancelled = flag
         if flag:
+            self._ready_event.set()
             for i in self.wait_tasks:
                 i.cancel()
 
@@ -1055,7 +1056,10 @@ class Thread:
         """Close a thread now or after a set time in seconds"""
 
         # restarts the after timer
-        await self.cancel_closure(auto_close)
+        await self.cancel_closure(
+            auto_close,
+            mark_auto_close_cancelled=not auto_close,
+        )
 
         if after > 0:
             # TODO: Add somewhere to clean up broken closures
@@ -1099,7 +1103,7 @@ class Thread:
             logger.error("Thread already closed: %s.", e)
             return
 
-        await self.cancel_closure(all=True)
+        await self.cancel_closure(all=True, mark_auto_close_cancelled=False)
 
         # Cancel auto closing the thread if closed by any means.
 
@@ -1273,18 +1277,32 @@ class Thread:
             except Exception as inner_e:
                 logger.debug("Failed removing view from DM menu message: %s", inner_e)
 
-    async def cancel_closure(self, auto_close: bool = False, all: bool = False) -> None:
+    async def cancel_closure(
+        self,
+        auto_close: bool = False,
+        all: bool = False,
+        *,
+        mark_auto_close_cancelled: bool = True,
+    ) -> None:
         if self.close_task is not None and (not auto_close or all):
             self.close_task.cancel()
             self.close_task = None
         if self.auto_close_task is not None and (auto_close or all):
             self.auto_close_task.cancel()
             self.auto_close_task = None
-            self.auto_close_cancelled = True  # Mark auto-close as explicitly cancelled
+            if mark_auto_close_cancelled:
+                self.auto_close_cancelled = True  # Mark auto-close as explicitly cancelled
 
-        to_update = self.bot.config["closures"].pop(str(self.id), None)
-        if to_update is not None:
-            await self.bot.config.update()
+        closure_key = str(self.id)
+        existing = self.bot.config["closures"].get(closure_key)
+        if existing is not None:
+            existing_is_auto = bool(existing.get("auto_close", False))
+            should_remove = (
+                all or (auto_close and existing_is_auto) or ((not auto_close) and (not existing_is_auto))
+            )
+            if should_remove:
+                self.bot.config["closures"].pop(closure_key, None)
+                await self.bot.config.update()
 
     async def _restart_close_timer(self):
         """
@@ -1781,6 +1799,13 @@ class Thread:
             reply commands to avoid mutating the original message object.
         """
         # Handle notes with Discord-like system message format - return early
+        if message is None:
+            # Safeguard against None messages (e.g. from menu interactions without a source message)
+            if not note and not from_mod and not thread_creation:
+                # If we're just trying to log/relay a user message and there is none, existing behavior
+                # suggests we might skip or error. Logging a warning and returning is safer than crashing.
+                return
+
         if note:
             destination = destination or self.channel
             content = message.content or "[No content]"
@@ -1813,11 +1838,14 @@ class Thread:
             return await destination.send(embed=embed)
 
         if not note and from_mod:
-            # Only restart auto-close if it wasn't explicitly cancelled
+            # Only restart auto-close if it wasn't explicitly cancelled.
+            # Auto-close is driven by the last moderator reply.
             if not self.auto_close_cancelled:
                 self.bot.loop.create_task(self._restart_close_timer())  # Start or restart thread auto close
         elif not note and not from_mod:
-            await self.cancel_closure(all=True)
+            # If the user replied last, the thread should not auto-close.
+            # Cancel any pending auto-close without marking it as an explicit cancellation.
+            await self.cancel_closure(auto_close=True, mark_auto_close_cancelled=False)
 
         if self.close_task is not None:
             # cancel closing if a thread message is sent.
@@ -1835,7 +1863,8 @@ class Thread:
             await self.wait_until_ready()
 
         if not from_mod and not note:
-            self.bot.loop.create_task(self.bot.api.append_log(message, channel_id=self.channel.id))
+            if self.channel:
+                self.bot.loop.create_task(self.bot.api.append_log(message, channel_id=self.channel.id))
 
         destination = destination or self.channel
 
@@ -2558,6 +2587,10 @@ class ThreadManager:
         # checks for existing thread in cache
         thread = self.cache.get(recipient.id)
         if thread:
+            # If there's a pending menu, return the existing thread to avoid creating duplicates
+            if getattr(thread, "_pending_menu", False):
+                logger.debug("Thread for %s has pending menu, returning existing thread.", recipient)
+                return thread
             try:
                 await thread.wait_until_ready()
             except asyncio.CancelledError:
@@ -2566,8 +2599,8 @@ class ThreadManager:
                     label = f"{recipient} ({recipient.id})"
                 except Exception:
                     label = f"User ({getattr(recipient, 'id', 'unknown')})"
-                logger.warning("Thread for %s cancelled, abort creating.", label)
-                return thread
+                self.cache.pop(recipient.id, None)
+                thread = None
             else:
                 if thread.channel and self.bot.get_channel(thread.channel.id):
                     logger.warning("Found an existing thread for %s, abort creating.", recipient)
@@ -2915,35 +2948,36 @@ class ThreadManager:
                             setattr(self.outer_thread, "_pending_menu", False)
                             return
                         # Forward the user's initial DM to the thread channel
-                        try:
-                            await self.outer_thread.send(message)
-                        except Exception:
-                            logger.error(
-                                "Failed to relay initial message after menu selection",
-                                exc_info=True,
-                            )
-                        else:
-                            # React to the user's DM with the 'sent' emoji
+                        if message:
                             try:
-                                (
-                                    sent_emoji,
-                                    _,
-                                ) = await self.outer_thread.bot.retrieve_emoji()
-                                await self.outer_thread.bot.add_reaction(message, sent_emoji)
-                            except Exception as e:
-                                logger.debug(
-                                    "Failed to add sent reaction to user's DM: %s",
-                                    e,
+                                await self.outer_thread.send(message)
+                            except Exception:
+                                logger.error(
+                                    "Failed to relay initial message after menu selection",
+                                    exc_info=True,
                                 )
-                            # Dispatch thread_reply event for parity
-                            self.outer_thread.bot.dispatch(
-                                "thread_reply",
-                                self.outer_thread,
-                                False,
-                                message,
-                                False,
-                                False,
-                            )
+                            else:
+                                # React to the user's DM with the 'sent' emoji
+                                try:
+                                    (
+                                        sent_emoji,
+                                        _,
+                                    ) = await self.outer_thread.bot.retrieve_emoji()
+                                    await self.outer_thread.bot.add_reaction(message, sent_emoji)
+                                except Exception as e:
+                                    logger.debug(
+                                        "Failed to add sent reaction to user's DM: %s",
+                                        e,
+                                    )
+                                # Dispatch thread_reply event for parity
+                                self.outer_thread.bot.dispatch(
+                                    "thread_reply",
+                                    self.outer_thread,
+                                    False,
+                                    message,
+                                    False,
+                                    False,
+                                )
                         # Clear pending flag
                         setattr(self.outer_thread, "_pending_menu", False)
                     except Exception:
@@ -2964,7 +2998,34 @@ class ThreadManager:
                                 # Create a synthetic message object that makes the bot appear
                                 # as the author for menu-invoked command replies so the user
                                 # selecting the option is not shown as a "mod" sender.
-                                synthetic = DummyMessage(copy.copy(message))
+                                if message:
+                                    synthetic = DummyMessage(copy.copy(message))
+                                else:
+                                    # Fallback if no message exists (e.g. self-created thread via menu)
+                                    # We use the interaction's message or construct a minimal dummy
+                                    base_msg = getattr(interaction, "message", None) or self.menu_msg
+                                    synthetic = (
+                                        DummyMessage(copy.copy(base_msg)) if base_msg else DummyMessage(None)
+                                    )
+                                    # Ensure minimal attributes for Context if still missing (DummyMessage handles some, but we need more for commands)
+                                    if not synthetic._message:
+                                        # Identify a valid channel
+                                        ch = self.outer_thread.channel
+                                        if not ch:
+                                            # If channel isn't ready, we can't really invoke a command in it.
+                                            continue
+
+                                        from unittest.mock import MagicMock
+
+                                        # Create a mock message strictly for command invocation context
+                                        mock_msg = MagicMock(spec=discord.Message)
+                                        mock_msg.id = 0
+                                        mock_msg.channel = ch
+                                        mock_msg.guild = self.outer_thread.bot.modmail_guild
+                                        mock_msg.content = self.outer_thread.bot.prefix + al
+                                        mock_msg.author = self.outer_thread.bot.user
+                                        synthetic = DummyMessage(mock_msg)
+
                                 try:
                                     synthetic.author = (
                                         self.outer_thread.bot.modmail_guild.me or self.outer_thread.bot.user
