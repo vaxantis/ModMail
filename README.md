@@ -28,7 +28,7 @@
   </a>
 
   <a href="https://www.python.org/downloads/">
-    <img src="https://img.shields.io/badge/Made%20With-Python%203.10-blue.svg?style=for-the-badge&logo=Python" alt="Made with Python 3.10">
+    <img src="https://img.shields.io/badge/Made%20With-Python%203.10--3.12-blue.svg?style=for-the-badge&logo=Python" alt="Made with Python 3.10-3.12">
   </a>
 
   <a href="https://github.com/ambv/black">
@@ -119,13 +119,7 @@ Plugins requests and support are available in our [Modmail Support Server](https
 
 Special thanks to our sponsors for supporting the project.
 
-SirReddit:
-<br>
-<a href='https://www.youtube.com/channel/UCgSmBJD9imASmJRleycTCwQ/featured'>
-  <img height=100 src='https://i.imgur.com/WyzaPKY.png' style='margin:5px'>
-</a>
-<br>
-<br>
+
 Prime Servers Inc:
 <br>
 <a href='https://primeserversinc.com/'>
@@ -137,13 +131,6 @@ Real Madrid:
 <br>
 <a href='https://discord.gg/realmadrid'>
   <img height=100 src='https://i.imgur.com/9Rat2Qb.png' style='margin:5px'>
-</a>
-<br>
-<br>
-Advertise Your Server:
-<br>
-<a href='https://discord.gg/zP8KcF4VQz'>
-  <img height=100 src='https://user-images.githubusercontent.com/45324516/140673115-dd3e873c-36b6-4383-9eb4-db42e1986ab3.png' style='margin:5px'>
 </a>
 <br>
 <br>
