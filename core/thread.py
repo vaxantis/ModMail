@@ -2964,7 +2964,7 @@ class ThreadManager:
                                 # Create a synthetic message object that makes the bot appear
                                 # as the author for menu-invoked command replies so the user
                                 # selecting the option is not shown as a "mod" sender.
-                                synthetic = DummyMessage(copy.copy(message))
+                                synthetic = DummyMessage(copy.copy(self.outer_thread._genesis_message))
                                 try:
                                     synthetic.author = (
                                         self.outer_thread.bot.modmail_guild.me or self.outer_thread.bot.user
@@ -3316,7 +3316,7 @@ class ThreadManager:
                             ctxs = []
                             for al in normalize_alias(alias):
                                 view_ = StringView(self.outer_thread.bot.prefix + al)
-                                synthetic = DummyMessage(copy.copy(message))
+                                synthetic = DummyMessage(copy.copy(self.outer_thread._genesis_message))
                                 try:
                                     synthetic.author = (
                                         self.outer_thread.bot.modmail_guild.me or self.outer_thread.bot.user
