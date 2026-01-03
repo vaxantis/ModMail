@@ -36,3 +36,21 @@ keywords = ['discord', 'modmail']
 
 [tool.pylint.format]
 max-line-length = "110"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+discord-py = "^2.6.4"
+isodate = "^0.7.2"
+aiosqlite = "^0.22.1"
+python-dotenv = "^1.2.1"
+aiohttp = "^3.13.2"
+sqlalchemy = "^2.0.45"
+emoji = "^2.15.0"
+packaging = "^25.0"
+motor = "^3.7.1"
+parsedatetime = "^2.6"
+python-dateutil = "^2.9.0.post0"
+lottie = "^0.7.2"
+cairosvg = "^2.8.2"
+pynacl = "^1.6.2"
+

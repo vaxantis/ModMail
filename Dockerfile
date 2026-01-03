@@ -1,38 +1,60 @@
-FROM python:3.11-slim-bookworm as base
+# -----------------------------
+# Stage 1: Base image with system deps
+# -----------------------------
+FROM python:3.11-slim-bookworm AS base
 
-RUN apt-get update &&  \
+# Install system dependencies
+RUN apt-get update && \
     apt-get install --no-install-recommends -y \
-    # Install CairoSVG dependencies.
-    libcairo2 && \
-    # Cleanup APT.
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    # Create a non-root user.
-    useradd --shell /usr/sbin/nologin --create-home -d /opt/modmail modmail
+        libcairo2 \
+        libpango-1.0-0 \
+        libgdk-pixbuf2.0-0 \
+        libffi7 \
+        wget \
+        build-essential \
+        git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --shell /usr/sbin/nologin --create-home -d /opt/modmail modmail
 
-FROM base as builder
+WORKDIR /opt/modmail
 
+# -----------------------------
+# Stage 2: Builder for venv & Python deps
+# -----------------------------
+FROM base AS builder
+
+# Copy only requirements first (faster rebuilds)
 COPY requirements.txt .
 
-RUN pip install --root-user-action=ignore --no-cache-dir --upgrade pip wheel && \
-    python -m venv /opt/modmail/.venv && \
-    . /opt/modmail/.venv/bin/activate && \
-    pip install --no-cache-dir --upgrade -r requirements.txt
+# Create venv and install all Python deps
+RUN python -m venv /opt/modmail/.venv \
+    && . /opt/modmail/.venv/bin/activate \
+    && pip install --upgrade pip wheel \
+    && pip install --no-cache-dir -r requirements.txt
 
+# -----------------------------
+# Stage 3: Final image
+# -----------------------------
 FROM base
 
-# Copy the entire venv.
+# Copy venv from builder
 COPY --from=builder --chown=modmail:modmail /opt/modmail/.venv /opt/modmail/.venv
 
-# Copy repository files.
-WORKDIR /opt/modmail
-USER modmail:modmail
+# Copy repository files
 COPY --chown=modmail:modmail . .
 
-# This sets some Python runtime variables and disables the internal auto-update.
-ENV PYTHONUNBUFFERED=1 \
+# Use venv by default
+ENV PATH="/opt/modmail/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH=/opt/modmail/.venv/bin:$PATH \
     USING_DOCKER=yes
 
-CMD ["python", "bot.py"]
+# Expose port for FastAPI
+EXPOSE 8000
+
+# Switch to non-root user
+USER modmail:modmail
+
+# Run FastAPI app (replace 'main:app' with your FastAPI entrypoint)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
